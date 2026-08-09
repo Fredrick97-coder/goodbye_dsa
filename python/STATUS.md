@@ -2,7 +2,7 @@
 
 **Created**: August 9, 2026  
 **Last Updated**: August 9, 2026  
-**Status**: Beginner + Almost Intermediate Complete (10/18 topics) ✅
+**Status**: Beginner + Intermediate Complete (11/18 topics) ✅ READY FOR ADVANCED!
 
 ---
 
@@ -96,13 +96,26 @@ Status: **READY TO USE** ✓
 
 Status: **READY TO USE** ✓
 
+#### Topic 11: Graphs (Basics) ✅
+- [x] **theory.md** - Graph representations, DFS, BFS, connectivity
+- [x] **examples.py** - 9 practical examples (runnable)
+- [x] **exercise.py** - 12 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Social networks, course scheduler, web crawler, puzzle solver
+
+Status: **READY TO USE** ✓
+
 ---
 
-## 📋 Topics Not Yet Created
+## 🎉 INTERMEDIATE LEVEL COMPLETE! ✅
 
-### Intermediate Level (Topic 11)
+All 5 intermediate topics finished:
+- Topic 07: Linked Lists ✅
+- Topic 08: Trees (Basics) ✅
+- Topic 09: Hash Maps ✅
+- Topic 10: Basic Searching ✅
+- Topic 11: Graphs (Basics) ✅
 
-#### Topic 11: Graphs (Basics)
+**Ready to begin Advanced Level (Topics 12-18)**
 
 ### Advanced Level (Topics 12-18)
 
@@ -211,8 +224,8 @@ Intermediate Level:
   [✓] Topic 08 - Trees (Basics)              (Complete) ✓
   [✓] Topic 09 - Hash Maps                   (Complete) ✓
   [✓] Topic 10 - Basic Searching             (Complete) ✓
-  [ ] Topic 11 - Graphs (Basics)             (Not Started)
-  → Progress: 4/5 intermediate complete (80%)
+  [✓] Topic 11 - Graphs (Basics)             (Complete) ✓
+  → Progress: 5/5 intermediate complete (100%) ✅
 
 Advanced Level:
   [ ] Topic 12 - Dynamic Programming         (Not Started)
@@ -288,7 +301,11 @@ Advanced Level:
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
-├── 11_graphs_basics/                  (TODO)
+├── 11_graphs_basics/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
 ├── 12_dynamic_programming/            (TODO)
 ├── 13_advanced_sorting/               (TODO)
 ├── 14_graph_algorithms/               (TODO)
@@ -450,9 +467,9 @@ You've learned a topic well when you can:
 
 ---
 
-## 🚀 Nearly Complete Intermediate Level!
+## 🎉 INTERMEDIATE LEVEL COMPLETE!
 
-Exceptional progress on the DSA learning journey:
+Phenomenal progress on the DSA learning journey:
 
 ✅ **Beginner Level Complete** (Topics 01-06) 100%
    - Introduction to DSA
@@ -462,27 +479,34 @@ Exceptional progress on the DSA learning journey:
    - Queues
    - Basic Sorting
 
-✅ **Intermediate Level (Almost Complete)** (Topics 07-10) 80%
+✅ **Intermediate Level Complete** (Topics 07-11) 100%
    - Linked Lists
    - Trees (Basics)
    - Hash Maps
    - Basic Searching
+   - Graphs (Basics)
 
-📋 **Final Intermediate Topic** (Topic 11) 20%
-   - Graphs (Basics) ← Last step to complete intermediate!
+📋 **Advanced Level** (Topics 12-18) Ready to Start
+   - Dynamic Programming
+   - Advanced Sorting
+   - Graph Algorithms
+   - Greedy Algorithms
+   - Bit Manipulation
+   - Advanced Trees
+   - Tries & String Algorithms
 
-🎯 **Next Immediate Steps**:
-1. Complete Topic 11: Graphs (Basics) - Final intermediate topic!
-2. Move to Advanced Level (Topics 12-18)
-3. Continue practicing on LeetCode alongside
-4. Consider real-world projects combining multiple topics
+🎯 **Next Steps**:
+1. Begin Advanced Level (Topics 12-18)
+2. Continue LeetCode practice
+3. Build real-world projects combining topics
+4. Master algorithms for interviews
 
-📊 **Overall Progress**: 10/18 topics complete (56%)
-📊 **Intermediate Progress**: 4/5 complete (80%)
+📊 **Overall Progress**: 11/18 topics complete (61%)
+📊 **Intermediate Progress**: 5/5 complete (100%) ✅
 
-**Finish the intermediate level and move to advanced!** 🚀
+**Ready for Advanced Level! Start Topic 12: Dynamic Programming!** 🚀
 
 ---
 
 **Last Updated**: August 9, 2026  
-**Version**: 1.3 - Beginner + Almost Intermediate Complete (10/18 topics, 56%)
+**Version**: 2.0 - Beginner + Intermediate Complete (11/18 topics, 61%)
