@@ -2,7 +2,7 @@
 
 **Created**: August 9, 2026  
 **Last Updated**: August 9, 2026  
-**Status**: Beginner + Intermediate + Topics 12-17 Complete (17/18 topics) ✅ ONE TOPIC REMAINING!
+**Status**: 🎉 **CURRICULUM COMPLETE** — All 18 topics done (18/18) ✅ ALL THREE LEVELS 100%!
 
 ---
 
@@ -115,7 +115,7 @@ All 5 intermediate topics finished:
 - Topic 10: Basic Searching ✅
 - Topic 11: Graphs (Basics) ✅
 
-**Ready to begin Advanced Level (Topics 12-18)**
+**Advanced Level (Topics 12-18) complete ✅**
 
 ### Advanced Level (Topics 12-18)
 
@@ -167,7 +167,13 @@ Status: **READY TO USE** ✓
 
 Status: **READY TO USE** ✓
 
-#### Topic 18: Tries & String Algorithms
+#### Topic 18: Tries & String Algorithms ✅
+- [x] **theory.md** - 12 sections on tries, KMP, Rabin-Karp, Z-algorithm, Aho-Corasick, suffix arrays, Manacher
+- [x] **examples.py** - 10 practical examples (runnable, all cross-verified)
+- [x] **exercise.py** - 24 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (autocomplete, content filter, plagiarism detector, DNA analyzer)
+
+Status: **READY TO USE** ✓
 
 ---
 
@@ -276,8 +282,8 @@ Advanced Level:
   [✓] Topic 15 - Greedy Algorithms           (Complete) ✓
   [✓] Topic 16 - Bit Manipulation            (Complete) ✓
   [✓] Topic 17 - Advanced Trees              (Complete) ✓
-  [ ] Topic 18 - Tries & String Algorithms   (Not Started)
-  → Progress: 6/7 advanced complete (86%)
+  [✓] Topic 18 - Tries & String Algorithms   (Complete) ✓
+  → Progress: 7/7 advanced complete (100%) ✅
 ```
 
 ---
@@ -378,7 +384,11 @@ Advanced Level:
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
-└── 18_trie_string_algorithms/         (TODO)
+└── 18_trie_string_algorithms/
+    ├── theory.md                      ✓
+    ├── examples.py                    ✓
+    ├── exercise.py                    ✓
+    └── project.py                     ✓
 ```
 
 ---
@@ -552,29 +562,32 @@ Phenomenal progress on the DSA learning journey:
    - Basic Searching
    - Graphs (Basics)
 
-🚀 **Advanced Level** (Topics 12-18) 96% Done
+✅ **Advanced Level Complete** (Topics 12-18) 100%
    - Dynamic Programming        ✅
    - Advanced Sorting           ✅
    - Graph Algorithms           ✅
    - Greedy Algorithms          ✅
    - Bit Manipulation           ✅
    - Advanced Trees             ✅
-   - Tries & String Algorithms  (next — final topic!)
+   - Tries & String Algorithms  ✅
 
-🎯 **Next Steps**:
-1. Complete Topic 18 - Tries & String Algorithms (the final topic!)
-2. Continue LeetCode practice
-3. Build real-world projects combining topics
-4. Review and consolidate the full curriculum
+🎯 **Next Steps** (the curriculum is done — this is what comes after):
+1. Work through the `exercise.py` stubs — they are the actual practice
+2. Re-read the benchmark sections; the surprising results are the valuable
+   ones (built-ins beating hand-rolled code, naive beating clever on random
+   input, hash tables beating trees for lookup)
+3. Build something combining topics — the Topic 17 order book used an AVL
+   tree, a Fenwick tree, and a dict together
+4. Practice explaining WHY, not reciting HOW
 
-📊 **Overall Progress**: 17/18 topics complete (94%)
+📊 **Overall Progress**: 18/18 topics complete (100%) 🎉
 📊 **Beginner Level**: 6/6 complete (100%) ✅
 📊 **Intermediate Level**: 5/5 complete (100%) ✅
-📊 **Advanced Level**: 6/7 complete (86%) 🚀
+📊 **Advanced Level**: 7/7 complete (100%) ✅
 
-**One topic from finishing the entire curriculum! Topics 12-17 Complete!** 🚀
+**🎉 CURRICULUM COMPLETE — All 18 topics, from Big-O notation to suffix arrays!**
 
 ---
 
 **Last Updated**: August 9, 2026  
-**Version**: 2.6 - Beginner + Intermediate + Topics 12-17 Complete (17/18 topics, 94%)
+**Version**: 3.0 - CURRICULUM COMPLETE (18/18 topics, 100%)
