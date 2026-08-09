@@ -2,7 +2,7 @@
 
 **Created**: August 9, 2026  
 **Last Updated**: August 9, 2026  
-**Status**: Beginner + Intermediate + Topic 12 Complete (12/18 topics) ✅ ADVANCED LEVEL UNDERWAY!
+**Status**: Beginner + Intermediate + Topics 12-13 Complete (13/18 topics) ✅ ADVANCED LEVEL PROGRESSING!
 
 ---
 
@@ -127,7 +127,14 @@ All 5 intermediate topics finished:
 
 Status: **READY TO USE** ✓
 
-#### Topic 13: Advanced Sorting
+#### Topic 13: Advanced Sorting ✅
+- [x] **theory.md** - 13 sections on merge, quick, heap, counting, radix sorts
+- [x] **examples.py** - 10 practical examples (runnable)
+- [x] **exercise.py** - 12 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (leaderboard, analytics, scheduling, indexing)
+
+Status: **READY TO USE** ✓
+
 #### Topic 14: Graph Algorithms
 #### Topic 15: Greedy Algorithms
 #### Topic 16: Bit Manipulation
@@ -236,13 +243,13 @@ Intermediate Level:
 
 Advanced Level:
   [✓] Topic 12 - Dynamic Programming         (Complete) ✓
-  [ ] Topic 13 - Advanced Sorting            (Not Started)
+  [✓] Topic 13 - Advanced Sorting            (Complete) ✓
   [ ] Topic 14 - Graph Algorithms            (Not Started)
   [ ] Topic 15 - Greedy Algorithms           (Not Started)
   [ ] Topic 16 - Bit Manipulation            (Not Started)
   [ ] Topic 17 - Advanced Trees              (Not Started)
   [ ] Topic 18 - Tries & String Algorithms   (Not Started)
-  → Progress: 1/7 advanced complete (14%)
+  → Progress: 2/7 advanced complete (29%)
 ```
 
 ---
@@ -318,7 +325,11 @@ Advanced Level:
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
-├── 13_advanced_sorting/               (TODO)
+├── 13_advanced_sorting/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
 ├── 14_graph_algorithms/               (TODO)
 ├── 15_greedy_algorithms/              (TODO)
 ├── 16_bit_manipulation/               (TODO)
@@ -512,14 +523,14 @@ Phenomenal progress on the DSA learning journey:
 3. Build real-world projects combining topics
 4. Master algorithms for interviews
 
-📊 **Overall Progress**: 12/18 topics complete (67%)
+📊 **Overall Progress**: 13/18 topics complete (72%)
 📊 **Beginner Level**: 6/6 complete (100%) ✅
 📊 **Intermediate Level**: 5/5 complete (100%) ✅
-📊 **Advanced Level**: 1/7 complete (14%) 🚀
+📊 **Advanced Level**: 2/7 complete (29%) 🚀
 
-**Advanced Level Underway! Topic 12: Dynamic Programming Complete!** 🚀
+**Advanced Level Progressing! Topics 12-13: Dynamic Programming & Advanced Sorting Complete!** 🚀
 
 ---
 
 **Last Updated**: August 9, 2026  
-**Version**: 2.1 - Beginner + Intermediate + Topic 12 Complete (12/18 topics, 67%)
+**Version**: 2.2 - Beginner + Intermediate + Topics 12-13 Complete (13/18 topics, 72%)
