@@ -44,6 +44,20 @@ Each topic includes:
 
 ---
 
+## 🎤 Interview-Gap Topics (19-22)
+
+Added to cover categories that appear constantly in interviews but had no
+dedicated topic above.
+
+| # | Topic | Key Concepts |
+|---|-------|--------------|
+| 19 | [Heaps & Priority Queues](./19_heaps_priority_queues) | Binary heap, `heapq`, top-K, two-heap median, k-way merge |
+| 20 | [Backtracking](./20_backtracking) | Choose/explore/undo, subsets, permutations, N-Queens, Sudoku |
+| 21 | [Intervals & Matrix Patterns](./21_intervals_matrix) | Merge intervals, sweep line, spiral, rotate, islands, multi-source BFS |
+| 22 | [Math for Interviews](./22_math_for_interviews) | Sieve, GCD/LCM, modular arithmetic, fast power, combinatorics, overflow |
+
+---
+
 ## 🎯 How to Use This Repository
 
 ### **For Beginners:**

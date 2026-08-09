@@ -2,7 +2,7 @@
 
 **Created**: August 9, 2026  
 **Last Updated**: August 9, 2026  
-**Status**: 🎉 **CURRICULUM COMPLETE** — All 18 topics done (18/18) ✅ ALL THREE LEVELS 100%!
+**Status**: 🎉 **CURRICULUM COMPLETE** — 22/22 topics done ✅ Core (01-18) + Interview-Gap (19-22)
 
 ---
 
@@ -177,6 +177,44 @@ Status: **READY TO USE** ✓
 
 ---
 
+### Interview-Gap Level (Topics 19-22)
+
+Added to cover interview categories with no dedicated topic in 01-18.
+
+#### Topic 19: Heaps & Priority Queues ✅
+- [x] **theory.md** - 14 sections on binary heaps, `heapq`, top-K, two-heap median, k-way merge, scheduling
+- [x] **examples.py** - 11 examples (heap from scratch, the O(n) heapify proof, all four patterns)
+- [x] **exercise.py** - 24 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (task queue with aging, event simulator, log merger, percentile tracker)
+
+Status: **READY TO USE** ✓
+
+#### Topic 20: Backtracking ✅
+- [x] **theory.md** - 14 sections on the choose/explore/undo template, duplicates, pruning, N-Queens, Sudoku
+- [x] **examples.py** - 12 examples (one template, eight problems, all verified against itertools)
+- [x] **exercise.py** - 25 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (shift scheduler, Sudoku generator, regex engine + ReDoS, bin packing)
+
+Status: **READY TO USE** ✓
+
+#### Topic 21: Intervals & Matrix Patterns ✅
+- [x] **theory.md** - 14 sections on merging, sweep lines, spiral, rotate-in-place, islands, multi-source BFS
+- [x] **examples.py** - 14 examples (all 11 algorithms cross-verified against brute force)
+- [x] **exercise.py** - 27 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (calendar service, seat booking, image editor, Game of Life)
+
+Status: **READY TO USE** ✓
+
+#### Topic 22: Math for Interviews ✅
+- [x] **theory.md** - 12 sections on primes/sieves, GCD/LCM, modular arithmetic, fast power, combinatorics, overflow
+- [x] **examples.py** - 11 examples (9 verification suites against the stdlib and known constants)
+- [x] **exercise.py** - 27 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (RSA toolkit, consistent hashing, probability kit, checksum suite)
+
+Status: **READY TO USE** ✓
+
+---
+
 ## 🎯 Recommended Next Steps
 
 ### Immediate (Today/This Week)
@@ -284,6 +322,13 @@ Advanced Level:
   [✓] Topic 17 - Advanced Trees              (Complete) ✓
   [✓] Topic 18 - Tries & String Algorithms   (Complete) ✓
   → Progress: 7/7 advanced complete (100%) ✅
+
+Interview-Gap Level (Topics 19-22):
+  [✓] Topic 19 - Heaps & Priority Queues     (Complete) ✓
+  [✓] Topic 20 - Backtracking                (Complete) ✓
+  [✓] Topic 21 - Intervals & Matrix Patterns (Complete) ✓
+  [✓] Topic 22 - Math for Interviews         (Complete) ✓
+  → Progress: 4/4 interview-gap complete (100%) ✅
 ```
 
 ---
@@ -384,11 +429,15 @@ Advanced Level:
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
-└── 18_trie_string_algorithms/
-    ├── theory.md                      ✓
-    ├── examples.py                    ✓
-    ├── exercise.py                    ✓
-    └── project.py                     ✓
+├── 18_trie_string_algorithms/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
+├── 19_heaps_priority_queues/          ✓ (4 files)
+├── 20_backtracking/                   ✓ (4 files)
+├── 21_intervals_matrix/               ✓ (4 files)
+└── 22_math_for_interviews/            ✓ (4 files)
 ```
 
 ---
@@ -571,23 +620,36 @@ Phenomenal progress on the DSA learning journey:
    - Advanced Trees             ✅
    - Tries & String Algorithms  ✅
 
-🎯 **Next Steps** (the curriculum is done — this is what comes after):
-1. Work through the `exercise.py` stubs — they are the actual practice
-2. Re-read the benchmark sections; the surprising results are the valuable
-   ones (built-ins beating hand-rolled code, naive beating clever on random
-   input, hash tables beating trees for lookup)
-3. Build something combining topics — the Topic 17 order book used an AVL
-   tree, a Fenwick tree, and a dict together
-4. Practice explaining WHY, not reciting HOW
+✅ **Interview-Gap Level Complete** (Topics 19-22) 100%
+   - Heaps & Priority Queues      ✅
+   - Backtracking                 ✅
+   - Intervals & Matrix Patterns  ✅
+   - Math for Interviews          ✅
 
-📊 **Overall Progress**: 18/18 topics complete (100%) 🎉
+🎯 **Next Steps** (the topics are done — this is what actually remains):
+1. Work through the ~370 `exercise.py` stubs. This is the bulk of the
+   remaining work and the highest-leverage thing left. Reading theory
+   builds recognition; solving builds recall, and interviews test recall.
+2. Re-read the benchmark sections. The results that CONTRADICTED the
+   theory are the valuable ones: `str.find` beating hand-written KMP,
+   `bisect` beating an AVL tree, quickselect losing to a heap, naive
+   palindrome expansion beating Manacher on random input, and three
+   factorials tying an O(k) loop because `math.factorial` is C.
+3. Practice timed and out loud, without running the code. Nothing in this
+   repo simulates a 45-minute clock or narrating your reasoning.
+4. Build something combining topics. The Topic 17 order book used an AVL
+   tree, a Fenwick tree, and a dict together; the Topic 22 RSA toolkit
+   needed five separate techniques from one chapter.
+
+📊 **Overall Progress**: 22/22 topics complete (100%) 🎉
 📊 **Beginner Level**: 6/6 complete (100%) ✅
 📊 **Intermediate Level**: 5/5 complete (100%) ✅
 📊 **Advanced Level**: 7/7 complete (100%) ✅
+📊 **Interview-Gap Level**: 4/4 complete (100%) ✅
 
-**🎉 CURRICULUM COMPLETE — All 18 topics, from Big-O notation to suffix arrays!**
+**🎉 22 TOPICS COMPLETE — from Big-O notation to suffix arrays, RSA, and ReDoS!**
 
 ---
 
 **Last Updated**: August 9, 2026  
-**Version**: 3.0 - CURRICULUM COMPLETE (18/18 topics, 100%)
+**Version**: 4.0 - CURRICULUM COMPLETE (22/22 topics: core 01-18 + interview-gap 19-22)
