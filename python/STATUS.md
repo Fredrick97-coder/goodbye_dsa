@@ -55,18 +55,17 @@ Status: **READY TO USE** ✓
 
 Status: **READY TO USE** ✓
 
+#### Topic 06: Basic Sorting Algorithms ✅
+- [x] **theory.md** - Bubble, Selection, Insertion sorts
+- [x] **examples.py** - 12 practical examples (runnable)
+- [x] **exercise.py** - 12 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Algorithm analyzer & comparison
+
+Status: **READY TO USE** ✓
+
 ---
 
 ## 📋 Topics Not Yet Created
-
-### Beginner Level (Topic 06 Only)
-
-#### Topic 06: Basic Sorting Algorithms
-- Expected content:
-  - Bubble, Selection, Insertion sorts
-  - Comparisons and optimizations
-  - When to use each
-  - Project: Sorting comparison tool
 
 ### Intermediate Level (Topics 07-11)
 
@@ -231,6 +230,11 @@ Advanced Level:
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
 ├── 05_queues/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
+├── 06_basic_sorting/
 │   ├── theory.md                      ✓
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
