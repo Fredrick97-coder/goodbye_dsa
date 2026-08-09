@@ -2,7 +2,7 @@
 
 **Created**: August 9, 2026  
 **Last Updated**: August 9, 2026  
-**Status**: Beginner + Intermediate + Topics 12-16 Complete (16/18 topics) ✅ ADVANCED LEVEL 86% DONE!
+**Status**: Beginner + Intermediate + Topics 12-17 Complete (17/18 topics) ✅ ONE TOPIC REMAINING!
 
 ---
 
@@ -159,7 +159,14 @@ Status: **READY TO USE** ✓
 
 Status: **READY TO USE** ✓
 
-#### Topic 17: Advanced Trees
+#### Topic 17: Advanced Trees ✅
+- [x] **theory.md** - 10 sections on AVL, Red-Black, Segment Trees, Fenwick Trees, B-Trees
+- [x] **examples.py** - 10 practical examples (runnable)
+- [x] **exercise.py** - 19 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (database index, leaderboard, metrics store, order book)
+
+Status: **READY TO USE** ✓
+
 #### Topic 18: Tries & String Algorithms
 
 ---
@@ -268,9 +275,9 @@ Advanced Level:
   [✓] Topic 14 - Graph Algorithms            (Complete) ✓
   [✓] Topic 15 - Greedy Algorithms           (Complete) ✓
   [✓] Topic 16 - Bit Manipulation            (Complete) ✓
-  [ ] Topic 17 - Advanced Trees              (Not Started)
+  [✓] Topic 17 - Advanced Trees              (Complete) ✓
   [ ] Topic 18 - Tries & String Algorithms   (Not Started)
-  → Progress: 5/7 advanced complete (71%)
+  → Progress: 6/7 advanced complete (86%)
 ```
 
 ---
@@ -366,7 +373,11 @@ Advanced Level:
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
-├── 17_advanced_trees/                 (TODO)
+├── 17_advanced_trees/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
 └── 18_trie_string_algorithms/         (TODO)
 ```
 
@@ -541,29 +552,29 @@ Phenomenal progress on the DSA learning journey:
    - Basic Searching
    - Graphs (Basics)
 
-🚀 **Advanced Level** (Topics 12-18) 86% Done
+🚀 **Advanced Level** (Topics 12-18) 96% Done
    - Dynamic Programming        ✅
    - Advanced Sorting           ✅
    - Graph Algorithms           ✅
    - Greedy Algorithms          ✅
    - Bit Manipulation           ✅
-   - Advanced Trees             (next)
-   - Tries & String Algorithms
+   - Advanced Trees             ✅
+   - Tries & String Algorithms  (next — final topic!)
 
 🎯 **Next Steps**:
-1. Complete Topic 17 - Advanced Trees (AVL, Red-Black, Segment Trees)
-2. Complete Topic 18 - Tries & String Algorithms
-3. Continue LeetCode practice
-4. Build real-world projects combining topics
+1. Complete Topic 18 - Tries & String Algorithms (the final topic!)
+2. Continue LeetCode practice
+3. Build real-world projects combining topics
+4. Review and consolidate the full curriculum
 
-📊 **Overall Progress**: 16/18 topics complete (89%)
+📊 **Overall Progress**: 17/18 topics complete (94%)
 📊 **Beginner Level**: 6/6 complete (100%) ✅
 📊 **Intermediate Level**: 5/5 complete (100%) ✅
-📊 **Advanced Level**: 5/7 complete (71%) 🚀
+📊 **Advanced Level**: 6/7 complete (86%) 🚀
 
-**Advanced Level 86% Done! Topics 12-16: DP, Sorting, Graphs, Greedy & Bits Complete!** 🚀
+**One topic from finishing the entire curriculum! Topics 12-17 Complete!** 🚀
 
 ---
 
 **Last Updated**: August 9, 2026  
-**Version**: 2.5 - Beginner + Intermediate + Topics 12-16 Complete (16/18 topics, 89%)
+**Version**: 2.6 - Beginner + Intermediate + Topics 12-17 Complete (17/18 topics, 94%)
