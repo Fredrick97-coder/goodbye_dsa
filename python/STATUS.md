@@ -47,18 +47,19 @@ Status: **READY TO USE** ✓
 
 Status: **READY TO USE** ✓
 
+#### Topic 05: Queues ✅
+- [x] **theory.md** - Queue operations, BFS, applications
+- [x] **examples.py** - 12 practical examples (runnable)
+- [x] **exercise.py** - 12 problems (easy, medium, hard, challenge)
+- [x] **project.py** - BFS applications (pathfinding, social networks, maze solver)
+
+Status: **READY TO USE** ✓
+
 ---
 
 ## 📋 Topics Not Yet Created
 
-### Beginner Level (Topics 05, 06)
-
-#### Topic 05: Queues
-- Expected content:
-  - Queue operations (enqueue, dequeue)
-  - Circular queues
-  - BFS introduction
-  - Applications (scheduling, buffering)
+### Beginner Level (Topic 06 Only)
 
 #### Topic 06: Basic Sorting Algorithms
 - Expected content:
@@ -229,7 +230,11 @@ Advanced Level:
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
-├── 05_queues/                         (TODO)
+├── 05_queues/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
 ├── 06_basic_sorting/                  (TODO)
 ├── 07_linked_lists/                   (TODO)
 ├── 08_trees_basics/                   (TODO)
