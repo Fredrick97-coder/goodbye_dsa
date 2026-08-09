@@ -2,7 +2,7 @@
 
 **Created**: August 9, 2026  
 **Last Updated**: August 9, 2026  
-**Status**: Beginner + Intermediate + Topics 12-15 Complete (15/18 topics) ✅ ADVANCED LEVEL 75% DONE!
+**Status**: Beginner + Intermediate + Topics 12-16 Complete (16/18 topics) ✅ ADVANCED LEVEL 86% DONE!
 
 ---
 
@@ -150,8 +150,15 @@ Status: **READY TO USE** ✓
 - [x] **project.py** - Real-world applications (compression, scheduling, resource allocation)
 
 Status: **READY TO USE** ✓
-#### Topic 15: Greedy Algorithms
-#### Topic 16: Bit Manipulation
+
+#### Topic 16: Bit Manipulation ✅
+- [x] **theory.md** - 12 sections on bitwise operators, bit tricks, XOR patterns, bitmask DP
+- [x] **examples.py** - 10 practical examples (runnable)
+- [x] **exercise.py** - 16 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Real-world applications (permissions, Bloom filter, feature flags, task assignment)
+
+Status: **READY TO USE** ✓
+
 #### Topic 17: Advanced Trees
 #### Topic 18: Tries & String Algorithms
 
@@ -260,10 +267,10 @@ Advanced Level:
   [✓] Topic 13 - Advanced Sorting            (Complete) ✓
   [✓] Topic 14 - Graph Algorithms            (Complete) ✓
   [✓] Topic 15 - Greedy Algorithms           (Complete) ✓
-  [ ] Topic 16 - Bit Manipulation            (Not Started)
+  [✓] Topic 16 - Bit Manipulation            (Complete) ✓
   [ ] Topic 17 - Advanced Trees              (Not Started)
   [ ] Topic 18 - Tries & String Algorithms   (Not Started)
-  → Progress: 4/7 advanced complete (57%)
+  → Progress: 5/7 advanced complete (71%)
 ```
 
 ---
@@ -354,9 +361,11 @@ Advanced Level:
 │   ├── examples.py                    ✓
 │   ├── exercise.py                    ✓
 │   └── project.py                     ✓
-├── 14_graph_algorithms/               (TODO)
-├── 15_greedy_algorithms/              (TODO)
-├── 16_bit_manipulation/               (TODO)
+├── 16_bit_manipulation/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
 ├── 17_advanced_trees/                 (TODO)
 └── 18_trie_string_algorithms/         (TODO)
 ```
@@ -532,29 +541,29 @@ Phenomenal progress on the DSA learning journey:
    - Basic Searching
    - Graphs (Basics)
 
-📋 **Advanced Level** (Topics 12-18) Ready to Start
-   - Dynamic Programming
-   - Advanced Sorting
-   - Graph Algorithms
-   - Greedy Algorithms
-   - Bit Manipulation
-   - Advanced Trees
+🚀 **Advanced Level** (Topics 12-18) 86% Done
+   - Dynamic Programming        ✅
+   - Advanced Sorting           ✅
+   - Graph Algorithms           ✅
+   - Greedy Algorithms          ✅
+   - Bit Manipulation           ✅
+   - Advanced Trees             (next)
    - Tries & String Algorithms
 
 🎯 **Next Steps**:
-1. Begin Advanced Level (Topics 12-18)
-2. Continue LeetCode practice
-3. Build real-world projects combining topics
-4. Master algorithms for interviews
+1. Complete Topic 17 - Advanced Trees (AVL, Red-Black, Segment Trees)
+2. Complete Topic 18 - Tries & String Algorithms
+3. Continue LeetCode practice
+4. Build real-world projects combining topics
 
-📊 **Overall Progress**: 15/18 topics complete (83%)
+📊 **Overall Progress**: 16/18 topics complete (89%)
 📊 **Beginner Level**: 6/6 complete (100%) ✅
 📊 **Intermediate Level**: 5/5 complete (100%) ✅
-📊 **Advanced Level**: 4/7 complete (57%) 🚀
+📊 **Advanced Level**: 5/7 complete (71%) 🚀
 
-**Advanced Level 75% Done! Topics 12-15: DP, Sorting, Graphs & Greedy Algorithms Complete!** 🚀
+**Advanced Level 86% Done! Topics 12-16: DP, Sorting, Graphs, Greedy & Bits Complete!** 🚀
 
 ---
 
 **Last Updated**: August 9, 2026  
-**Version**: 2.4 - Beginner + Intermediate + Topics 12-15 Complete (15/18 topics, 83%)
+**Version**: 2.5 - Beginner + Intermediate + Topics 12-16 Complete (16/18 topics, 89%)
