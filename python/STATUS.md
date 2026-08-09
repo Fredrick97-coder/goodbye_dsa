@@ -31,13 +31,21 @@ Status: **READY TO USE** ✓
 
 Status: **READY TO USE** ✓
 
-#### Topic 04: Stacks 📝
-- [x] **theory.md** - Stack operations, applications
-- [ ] **examples.py** - Not yet created (template provided)
-- [ ] **exercise.py** - Not yet created
-- [ ] **project.py** - Not yet created
+#### Topic 04: Stacks ✅
+- [x] **theory.md** - Stack operations, applications, complexity
+- [x] **examples.py** - 12 practical examples
+- [x] **exercise.py** - 12 problems (easy, medium, hard, challenge)
+- [x] **project.py** - Expression parser & calculator (Shunting Yard)
 
-Status: **THEORY ONLY** - Ready for examples/exercises
+Status: **READY TO USE** ✓
+
+#### Topic 04: Stacks ✅
+- [x] **theory.md** - Stack operations, applications
+- [x] **examples.py** - 12 practical examples (runnable)
+- [x] **exercise.py** - 12 problems (3 difficulty levels)
+- [x] **project.py** - Expression parser & calculator project
+
+Status: **COMPLETE** - Ready to Use ✓
 
 ---
 
@@ -219,7 +227,11 @@ Advanced Level:
 │   └── project.py                     ✓
 │
 ├── 03_strings/                        (TODO)
-├── 04_stacks/                         (PARTIAL)
+├── 04_stacks/
+│   ├── theory.md                      ✓
+│   ├── examples.py                    ✓
+│   ├── exercise.py                    ✓
+│   └── project.py                     ✓
 ├── 05_queues/                         (TODO)
 ├── 06_basic_sorting/                  (TODO)
 ├── 07_linked_lists/                   (TODO)
