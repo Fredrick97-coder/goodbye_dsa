@@ -58,6 +58,24 @@ dedicated topic above.
 
 ---
 
+## 🧪 Practice Tools
+
+Two commands. Full guide in **[PRACTICE.md](./PRACTICE.md)**.
+
+```bash
+python check.py 19        # test YOUR solutions against reference tests
+python check.py --todo    # progress across all 22 topics
+python drill.py -n 5      # 5 random problems with the TOPIC HIDDEN
+python drill.py --stats   # what you have drawn, and your times
+```
+
+`check.py` tells you when an answer is wrong and prints the failing input —
+reading theory builds recognition, but only a feedback loop builds recall.
+`drill.py` hides the topic, because recognising *which* technique applies is a
+separate skill from executing it, and no `exercise.py` can train it.
+
+---
+
 ## 🎯 How to Use This Repository
 
 ### **For Beginners:**

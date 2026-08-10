@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import inspect
 import io
 import random
 from typing import Any, List, Optional, Tuple
@@ -57,8 +58,118 @@ def _call(fn, args, sp: Spec):
     return out
 
 
+def _matches(got: Any, want: Any, sp: Spec) -> bool:
+    """
+    Compare one result against one expectation.
+
+    `prop` is applied to the ACTUAL value only, so `want` can describe a
+    property of the output ("is this a valid min-heap?") rather than the
+    output itself. `norm` is applied to BOTH, for order-insensitive checks.
+    """
+    if sp.prop is not None:
+        try:
+            got = sp.prop(got)
+        except Exception:                                   # noqa: BLE001
+            return False
+    elif sp.norm is not None:
+        got, want = sp.norm(got), sp.norm(want)
+    return _same(got, want, sp.tol)
+
+
+def _ref_value(sp: Spec, args: tuple):
+    """
+    What the reference says the answer is.
+
+    For in-place problems the answer is the MUTATED first argument, not the
+    return value -- an in-place reference returns None by design.
+    """
+    safe = copy.deepcopy(args)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        out = sp.ref(*safe)
+    return safe[0] if sp.inplace else out
+
+
+def _body_is_empty(fn) -> Optional[bool]:
+    """
+    Is this function still an unwritten stub, judged from its SOURCE?
+
+    Output alone cannot always tell. A transpose that loops over the full row
+    range swaps every pair twice and is a perfect no-op -- identical output to
+    an empty stub, but the learner did write code and deserves a FAIL with an
+    explanation rather than a misleading "not implemented".
+
+    Returns None when the source cannot be read.
+    """
+    try:
+        src = inspect.getsource(fn)
+    except (OSError, TypeError):
+        return None
+    lines = src.splitlines()
+    # drop the signature (which may span lines) up to the first colon-ended line
+    body: List[str] = []
+    started = False
+    for line in lines:
+        stripped = line.strip()
+        if not started:
+            if stripped.endswith(":") and (stripped.startswith("def ")
+                                           or ")" in stripped):
+                started = True
+            continue
+        if not stripped or stripped.startswith("#"):
+            continue
+        body.append(stripped)
+    if not body:
+        return True
+    # strip a leading docstring
+    if body[0][:3] in ('"""', "'''"):
+        quote = body[0][:3]
+        if body[0].count(quote) >= 2:
+            body = body[1:]
+        else:
+            for i in range(1, len(body)):
+                if quote in body[i]:
+                    body = body[i + 1:]
+                    break
+            else:
+                body = []
+    real = [b for b in body if b not in ("pass", "...") and
+            not b.startswith("#")]
+    return not real
+
+
+def _unimplemented(got: Any, sp: Spec, args: tuple) -> bool:
+    """
+    Distinguish "not written yet" from "written and wrong".
+
+    A plain `pass` body returns None. For in-place problems it instead leaves
+    the argument untouched, so compare against the original input.
+
+    For OBJECT inputs (a linked-list head, a tree root) `==` falls back to
+    identity and would always report False -- making an untouched stub look
+    like a wrong answer. Compare through `prop` in that case, which is what
+    turns the object into something comparable in the first place.
+    """
+    written = _body_is_empty(_CURRENT_FN[0]) if _CURRENT_FN[0] else None
+    if written is False:
+        # The learner wrote real code, so nothing here is an unwritten stub.
+        return False
+    if not sp.inplace:
+        return got is None
+    if sp.prop is not None:
+        try:
+            return sp.prop(got) == sp.prop(args[0])
+        except Exception:                                   # noqa: BLE001
+            return False
+    return got == args[0]
+
+
+_CURRENT_FN: List[Any] = [None]
+
+
 def _run_one(sp: Spec, module) -> Result:
     fn, owner = resolve(module, sp.target)
+    _CURRENT_FN[0] = fn
     if fn is None:
         return Result(sp.num, sp.target, MISSING,
                       "not defined in exercise.py")
@@ -91,65 +202,75 @@ def _run_one(sp: Spec, module) -> Result:
 
     # ---- fixed cases ------------------------------------------------------
     checked = 0
-    all_none = True
-    saw_non_none_expected = False
+    stub_hits = 0
+    real_progress = 0     # a case that passed AND could not be a stub artefact
 
-    for args, want in sp.cases:
+    cases = list(sp.cases)
+    if sp.build_cases is not None:
+        # Cases whose inputs must be constructed from the learner's own
+        # classes (a Node chain, a TreeNode tree) rather than written inline.
+        try:
+            cases += list(sp.build_cases(module))
+        except Exception as exc:                            # noqa: BLE001
+            return Result(sp.num, sp.target, ERROR,
+                          f"could not build inputs: {type(exc).__name__}: "
+                          f"{_short(str(exc))}")
+
+    for args, want in cases:
         try:
             got = _call(fn, args, sp)
         except Exception as exc:                            # noqa: BLE001
             return Result(sp.num, sp.target, ERROR,
                           f"{type(exc).__name__} on {_short(args)}: "
                           f"{_short(str(exc))}")
-        if want is not None:
-            saw_non_none_expected = True
-        if got is not None:
-            all_none = False
-        norm = sp.norm or (lambda v: v)
-        if not _same(norm(got), norm(want), sp.tol):
-            if got is None:
-                continue      # decide STUB vs FAIL after the loop
-            return Result(sp.num, sp.target, FAIL,
-                          f"{sp.target}{_short(args)} -> {_short(got)}, "
-                          f"expected {_short(want)}")
-        checked += 1
+        looks_stubbed = _unimplemented(got, sp, args)
+        if _matches(got, want, sp):
+            checked += 1
+            # A no-op case (input already satisfies the postcondition) is
+            # indistinguishable from a stub, so it is not evidence of work.
+            if not looks_stubbed:
+                real_progress += 1
+            continue
+        if looks_stubbed:
+            stub_hits += 1
+            continue
+        return Result(sp.num, sp.target, FAIL,
+                      f"{sp.target}{_short(args)} -> {_short(got)}, "
+                      f"expected {_short(want)}")
 
-    if sp.cases and all_none and saw_non_none_expected:
-        return Result(sp.num, sp.target, STUB, "returns None")
+    # Nothing proved the function does real work -> it is still a stub.
+    if stub_hits and real_progress == 0:
+        return Result(sp.num, sp.target, STUB, "not implemented")
 
-    # A case returned None but others did not: that is a real failure.
-    if checked < len(sp.cases):
-        for args, want in sp.cases:
-            try:
-                got = _call(fn, args, sp)
-            except Exception:                               # noqa: BLE001
-                break
-            norm = sp.norm or (lambda v: v)
-            if not _same(norm(got), norm(want), sp.tol):
-                return Result(sp.num, sp.target, FAIL,
-                              f"{sp.target}{_short(args)} -> {_short(got)}, "
-                              f"expected {_short(want)}")
+    # Some inputs work and others produce nothing: genuinely broken.
+    if stub_hits:
+        return Result(sp.num, sp.target, FAIL,
+                      f"{stub_hits} of {len(cases)} cases produced no "
+                      f"result while others worked")
 
     # ---- randomized comparison against a reference ------------------------
-    if sp.ref and sp.gen:
+    maker = sp.gen
+    if sp.build is not None:
+        maker = lambda rng: sp.build(module, rng)   # noqa: E731
+    if sp.ref and maker:
         rng = random.Random(sp.num * 7919 + 13)
         for _ in range(sp.trials):
-            args = sp.gen(rng)
+            args = maker(rng)
             try:
                 got = _call(fn, args, sp)
             except Exception as exc:                        # noqa: BLE001
                 return Result(sp.num, sp.target, ERROR,
                               f"{type(exc).__name__} on {_short(args)}: "
                               f"{_short(str(exc))}")
-            want = sp.ref(*copy.deepcopy(args))
-            if got is None and want is not None:
-                return Result(sp.num, sp.target, STUB, "returns None")
-            norm = sp.norm or (lambda v: v)
-            if not _same(norm(got), norm(want), sp.tol):
-                return Result(sp.num, sp.target, FAIL,
-                              f"{sp.target}{_short(args)} -> {_short(got)}, "
-                              f"expected {_short(want)}")
-            checked += 1
+            want = _ref_value(sp, args)
+            if _matches(got, want, sp):
+                checked += 1
+                continue
+            if _unimplemented(got, sp, args):
+                return Result(sp.num, sp.target, STUB, "not implemented")
+            return Result(sp.num, sp.target, FAIL,
+                          f"{sp.target}{_short(args)} -> {_short(got)}, "
+                          f"expected {_short(want)}")
 
     if checked == 0:
         return Result(sp.num, sp.target, STUB, "nothing verifiable ran")

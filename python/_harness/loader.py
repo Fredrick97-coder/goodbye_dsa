@@ -37,9 +37,13 @@ def topic_dirs() -> Dict[int, Path]:
     return out
 
 
+_ACRONYMS = {"Dsa": "DSA", "Bst": "BST", "Avl": "AVL", "Dp": "DP"}
+
+
 def topic_title(d: Path) -> str:
     """Human-readable topic name from the directory name."""
-    return d.name.split("_", 1)[1].replace("_", " ").title()
+    words = d.name.split("_", 1)[1].replace("_", " ").title().split()
+    return " ".join(_ACRONYMS.get(w, w) for w in words)
 
 
 def load_exercise(topic: int):

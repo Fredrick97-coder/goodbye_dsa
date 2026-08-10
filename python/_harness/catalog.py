@@ -24,9 +24,13 @@ from typing import Dict, List, Optional
 
 from .loader import topic_dirs, topic_title
 
-_SECTION = re.compile(r'print\(\s*"\\n*\[([A-Z /]+?)\s*PROBLEMS?\]"')
-_SECTION_ALT = re.compile(r'print\(\s*"\\n*\[([A-Z /-]+?)\]"')
-_HEADING = re.compile(r'print\(\s*"\\n(\d+)\.\s+(.+?)"\s*\)')
+# NOTE the (?:\\n)* -- section headers are written as "\n[EASY PROBLEMS]" but
+# also "\n\n[HARD PROBLEMS]" with TWO escape sequences. A pattern of `\\n*`
+# matches a backslash followed by n's, which silently fails on the doubled
+# form -- and the result was every problem being labelled "Easy".
+_SECTION = re.compile(r'print\(\s*"(?:\\n)*\[([A-Z /]+?)\s*PROBLEMS?\]"')
+_SECTION_ALT = re.compile(r'print\(\s*"(?:\\n)*\[([A-Z /-]+?)\]"')
+_HEADING = re.compile(r'print\(\s*"(?:\\n)+(\d+)\.\s+(.+?)"\s*\)')
 _FIELD = re.compile(r'print\(\s*"(Input|Output|Example):\s*(.*?)"\s*\)')
 _DEF = re.compile(r'^(?:def|class)\s+(\w+)', re.M)
 
@@ -51,6 +55,23 @@ class Problem:
     def label(self) -> str:
         return f"{self.topic:02d}.{self.num:02d}"
 
+    @property
+    def drillable(self) -> bool:
+        """
+        Usable as a blind drill: it must actually state a problem.
+
+        A few entries are discussion prompts ("COMPLEXITY ANALYSIS") with no
+        Input/Output lines. Drawing those blind is pointless -- there is
+        nothing to recognise -- so they are excluded from drill.py while
+        still being counted in the catalogue.
+        """
+        return bool(self.input_desc or self.output_desc) and bool(self.targets)
+
+    @property
+    def unique_targets(self) -> List[str]:
+        """Target names with duplicates collapsed, order preserved."""
+        return list(dict.fromkeys(self.targets))
+
 
 def _difficulty_from(raw: str) -> str:
     r = raw.strip().upper()
@@ -72,8 +93,22 @@ def parse_topic(topic: int) -> List[Problem]:
     problems: List[Problem] = []
     difficulty = "Unknown"
     current: Optional[Problem] = None
+    in_block_string = False
 
     for line in src.splitlines():
+        # Some problem descriptions quote a "current implementation" inside a
+        # triple-quoted string, at column 0. Those `def`s are illustrative
+        # text, not real functions -- topic 01's find_closest_pair is one.
+        # Count the fences so we never record them as targets.
+        fences = line.count('"""') + line.count("'''")
+        if in_block_string:
+            if fences % 2 == 1:
+                in_block_string = False
+            continue
+        if fences % 2 == 1:
+            in_block_string = True
+            continue
+
         sec = _SECTION.search(line) or _SECTION_ALT.search(line)
         if sec:
             d = _difficulty_from(sec.group(1))

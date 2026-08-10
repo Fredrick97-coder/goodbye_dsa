@@ -225,7 +225,7 @@ SPECS = [
     spec(4, "heap_pop", cases=[
         (([1, 3, 5, 7],), 1), (([5],), 5),
     ]),
-    spec(5, "heapify", inplace=True, norm=_ref_is_min_heap,
+    spec(5, "heapify", inplace=True, prop=_ref_is_min_heap,
          cases=[(([9, 4, 7, 1, 8, 2],), True), (([1],), True)]),
     spec(6, "is_min_heap", ref=_ref_is_min_heap, gen=g_int_list, cases=[
         (([1, 3, 5, 7, 9],), True), (([1, 3, 5, 0],), False), (([],), True),
@@ -274,10 +274,14 @@ SPECS = [
          tol=1e-9, cases=[
         (([1, 3, -1, -3, 5, 3, 6, 7], 3), [1, -1, -1, 3, 5, 6]),
     ]),
+    # The hardcoded case uses the full LeetCode 632 input. An earlier version
+    # truncated the lists and kept the published answer (9, 12), which is not
+    # even a valid cover of the shortened lists -- the self-consistency check
+    # caught it.
     spec(17, "smallest_range", ref=_ref_smallest_range,
          gen=g_nonempty_sorted_lists,
          norm=lambda x: tuple(x) if x is not None else None, cases=[
-        (([[4, 10, 15], [0, 9, 12], [5, 18, 22]],), (9, 12)),
+        (([[4, 10, 15, 24, 26], [0, 9, 12, 20], [5, 18, 22, 30]],), (20, 24)),
     ]),
     spec(18, "reorganize_string",
          norm=lambda s: None if s is None else (

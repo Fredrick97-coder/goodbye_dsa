@@ -17,7 +17,7 @@ Both may be given; both run.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 # A case is (args_tuple, expected). kwargs are not needed anywhere so far.
 Case = Tuple[tuple, Any]
@@ -33,11 +33,19 @@ class Spec:
     ref: Optional[Callable] = None             # reference implementation
     gen: Optional[Callable] = None             # () -> args tuple
     trials: int = 150                          # randomized trials
-    norm: Optional[Callable] = None            # normalise before comparing
+    norm: Optional[Callable] = None            # applied to BOTH sides
+    prop: Optional[Callable] = None            # applied to the ACTUAL only,
+                                               # then compared to `expected`
+                                               # (e.g. "is it a valid heap?")
     inplace: bool = False                      # mutates args[0], returns None
     tol: Optional[float] = None                # float comparison tolerance
     script: Optional[Callable] = None          # for classes: (cls) -> result
     ref_script: Optional[Callable] = None      # reference for `script`
+    build: Optional[Callable] = None           # (module, rng) -> args tuple,
+                                               # for inputs that must be built
+                                               # from the LEARNER's own classes
+                                               # (linked-list Nodes, TreeNodes)
+    build_cases: Optional[Callable] = None     # (module) -> [(args, expected)]
     note: str = ""                             # shown on failure
 
     @property
