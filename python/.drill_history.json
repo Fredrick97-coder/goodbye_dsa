@@ -1,0 +1,20 @@
+{
+ "02.13": {
+  "count": 1,
+  "seconds": 7.6,
+  "title": "LONGEST CONSECUTIVE SEQUENCE",
+  "topic": 2
+ },
+ "12.10": {
+  "count": 1,
+  "seconds": 1.0,
+  "title": "LONGEST INCREASING SUBSEQUENCE",
+  "topic": 12
+ },
+ "20.13": {
+  "count": 1,
+  "seconds": 0.4,
+  "title": "WORD SEARCH",
+  "topic": 20
+ }
+}
