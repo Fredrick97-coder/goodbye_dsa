@@ -36,10 +36,14 @@ from typing import Any, Dict, Optional, Tuple
 from fastapi import Depends, HTTPException, Request, Response, status
 
 from . import store
+from .settings import settings
 
 # --------------------------------------------------------------- passwords
 
-_SCRYPT_N = 2 ** 15          # 32 MB, ~50 ms -- see the module docstring
+# From settings so tests can lower it; production leaves it at 2^15 (32 MB,
+# ~50 ms). The value used is recorded inside each hash, so raising it later
+# upgrades existing passwords on their next successful login.
+_SCRYPT_N = settings.scrypt_n
 _SCRYPT_R = 8
 _SCRYPT_P = 1
 _DKLEN = 32
@@ -52,11 +56,12 @@ _HASH_RE = re.compile(r"^scrypt\$(\d+)\$(\d+)\$(\d+)\$([0-9a-f]+)\$([0-9a-f]+)$"
 
 
 def hash_password(password: str) -> str:
+    n = settings.scrypt_n
     salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=_SCRYPT_N,
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n,
                             r=_SCRYPT_R, p=_SCRYPT_P, dklen=_DKLEN,
                             maxmem=_MAXMEM)
-    return (f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}"
+    return (f"scrypt${n}${_SCRYPT_R}${_SCRYPT_P}"
             f"${salt.hex()}${digest.hex()}")
 
 
@@ -81,7 +86,8 @@ def needs_rehash(stored: str) -> bool:
     match = _HASH_RE.match(stored or "")
     if not match:
         return True
-    return (int(match.group(1)) < _SCRYPT_N or int(match.group(2)) != _SCRYPT_R
+    return (int(match.group(1)) < settings.scrypt_n
+            or int(match.group(2)) != _SCRYPT_R
             or int(match.group(3)) != _SCRYPT_P)
 
 
@@ -134,56 +140,57 @@ def clean_name(raw: Optional[str], email: str) -> str:
 
 # ------------------------------------------------------------ rate limiting
 
-_WINDOW = 15 * 60            # seconds
-_MAX_ATTEMPTS = 8            # per key, per window
-_attempts: Dict[str, list] = {}
+def client_ip(request: Request) -> str:
+    """
+    Who is this, for rate-limiting purposes.
 
-
-def _prune(key: str, now: float) -> list:
-    kept = [t for t in _attempts.get(key, []) if now - t < _WINDOW]
-    if kept:
-        _attempts[key] = kept
-    else:
-        _attempts.pop(key, None)
-    return kept
+    `X-Forwarded-For` is only honoured when `FORGE_TRUST_PROXY_HEADERS=1`,
+    because behind no proxy it is attacker-controlled -- trusting it by default
+    would let anyone bypass the limit with a header. The leftmost entry is the
+    original client when a trusted proxy appends correctly.
+    """
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            first = forwarded.split(",")[0].strip()
+            if first:
+                return first[:60]
+    return (request.client.host if request.client else "unknown")[:60]
 
 
 def rate_limit(request: Request, bucket: str) -> None:
     """
     Throttle repeated failures per client per bucket.
 
-    In-process, so it resets when the server restarts -- which is honest for a
-    single-process local tool and still stops an online guessing loop. Moving
-    this to the database is the change to make if this ever runs multi-worker.
+    Backed by the `auth_attempts` table rather than a process dictionary, so
+    restarting the server is not a way around the limit and the count is shared
+    if this ever runs more than one worker.
     """
-    now = time.time()
-    client = request.client.host if request.client else "unknown"
-    key = f"{bucket}:{client}"
-    recent = _prune(key, now)
-    if len(recent) >= _MAX_ATTEMPTS:
-        wait = int(_WINDOW - (now - recent[0])) // 60 + 1
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            f"too many attempts -- try again in about {wait} minute"
-            f"{'s' if wait != 1 else ''}")
+    client = client_ip(request)
+    if store.count_attempts(bucket, client) < settings.rate_max_attempts:
+        return
+    oldest = store.oldest_attempt(bucket, client) or time.time()
+    remaining = settings.rate_window_seconds - (time.time() - oldest)
+    minutes = max(1, int(remaining // 60) + 1)
+    raise HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        f"too many attempts -- try again in about {minutes} minute"
+        f"{'s' if minutes != 1 else ''}",
+        headers={"Retry-After": str(max(1, int(remaining)))})
 
 
 def record_failure(request: Request, bucket: str) -> None:
-    now = time.time()
-    client = request.client.host if request.client else "unknown"
-    key = f"{bucket}:{client}"
-    _attempts.setdefault(key, []).append(now)
+    store.record_attempt(bucket, client_ip(request))
 
 
 def clear_failures(request: Request, bucket: str) -> None:
-    client = request.client.host if request.client else "unknown"
-    _attempts.pop(f"{bucket}:{client}", None)
+    store.clear_attempts(bucket, client_ip(request))
 
 
 # ---------------------------------------------------------------- sessions
 
-COOKIE_NAME = "forge_session"
-SESSION_DAYS = 30
+COOKIE_NAME = settings.cookie_name
+SESSION_DAYS = settings.session_days
 _RENEW_AFTER = 24 * 3600     # only touch the row once a day, not per request
 
 
@@ -209,32 +216,28 @@ def token_hash(token: str) -> str:
 
 def set_session_cookie(response: Response, token: str, request: Request) -> None:
     response.set_cookie(
-        COOKIE_NAME, token,
-        max_age=SESSION_DAYS * 86400,
+        settings.cookie_name, token,
+        max_age=settings.session_days * 86400,
         httponly=True,
-        samesite="lax",
+        samesite=settings.cookie_samesite,
         secure=_is_secure(request),
+        domain=settings.cookie_domain,
         path="/",
     )
 
 
 def clear_session_cookie(response: Response, request: Request) -> None:
-    response.delete_cookie(COOKIE_NAME, path="/",
-                           httponly=True, samesite="lax",
+    response.delete_cookie(settings.cookie_name, path="/",
+                           domain=settings.cookie_domain,
+                           httponly=True,
+                           samesite=settings.cookie_samesite,
                            secure=_is_secure(request))
 
 
 def _is_secure(request: Request) -> bool:
-    """
-    Set `Secure` unless this is plain-http local development.
-
-    Hardcoding False would silently allow the cookie over cleartext in
-    production; hardcoding True would break http://localhost.
-    """
-    if request.url.scheme == "https":
-        return True
-    host = (request.url.hostname or "").lower()
-    return host not in ("localhost", "127.0.0.1", "::1", "")
+    """`Secure` unless this is plain-http localhost. See settings."""
+    return settings.cookie_secure_for(request.url.scheme,
+                                      request.url.hostname or "")
 
 
 # ------------------------------------------------------------ dependencies
@@ -280,7 +283,14 @@ def public_user(user: Dict[str, Any]) -> Dict[str, Any]:
 
 # ------------------------------------------------------------- CSRF guard
 
-_ALLOWED_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
+_ORIGIN_RE = (re.compile(settings.allowed_origin_regex)
+              if settings.allowed_origin_regex else None)
+
+
+def origin_allowed(origin: str) -> bool:
+    if origin in settings.allowed_origins:
+        return True
+    return bool(_ORIGIN_RE and _ORIGIN_RE.match(origin))
 
 
 def check_origin(request: Request) -> None:
@@ -288,12 +298,15 @@ def check_origin(request: Request) -> None:
     Reject cross-site state-changing requests.
 
     SameSite=Lax already stops the cookie riding along on a cross-site POST;
-    this is the belt to that braces, and it costs one header comparison. A
-    missing Origin is allowed so command-line clients still work -- browsers
-    always send it on cross-origin POSTs, which is the case that matters.
+    this is the belt to those braces, and it costs one header comparison. A
+    missing Origin is allowed so command-line clients keep working -- browsers
+    always send it on the cross-origin requests that matter.
+
+    The allowed set is the same configuration CORS uses, so the two cannot drift
+    apart and leave a hole in one of them.
     """
     origin = request.headers.get("origin")
-    if origin and not _ALLOWED_ORIGIN.match(origin):
+    if origin and not origin_allowed(origin):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "cross-origin request refused")
 

@@ -16,9 +16,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# webapp/backend/app/repo.py -> repo root is four levels up
-REPO_ROOT = Path(__file__).resolve().parents[3]
-PYTHON_ROOT = REPO_ROOT / "python"
+from .settings import REPO_ROOT as _REPO_ROOT
+from .settings import settings
+
+# The curriculum location is configuration (FORGE_PYTHON_ROOT), not a fact about
+# this file's position on disk -- a container mounts it somewhere else entirely.
+REPO_ROOT = _REPO_ROOT
+PYTHON_ROOT = settings.python_root
 
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))

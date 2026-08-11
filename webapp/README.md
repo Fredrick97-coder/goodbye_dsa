@@ -61,6 +61,12 @@ cd frontend && npm install
 | Languages other than Python | ⛔ see below |
 | **Accounts, with per-user progress** | ✅ (scrypt + server-side sessions) |
 | **Browse and Run without an account; the gate is at Submit** | ✅ |
+| **Sandboxed execution** (container, or macOS Seatbelt locally) | ✅ verified against escape attempts |
+| **Versioned schema migrations** | ✅ |
+| **Env-driven configuration, with a prod safety gate** | ✅ |
+| **Structured logs, request ids, error boundary, security headers** | ✅ |
+| **Ops CLI: migrate / backup / vacuum / users / reset-password** | ✅ |
+| **Test suite (102 tests)** | ✅ |
 
 ## Honest limitations
 
@@ -78,19 +84,32 @@ written, and `09-09 LRU Cache` specifies no interface to call. Everything else
 — all 340 — is graded. The UI marks the two with an amber dot in the list,
 `manual` in the Tests column, and a "no auto-grading" chip on the editor.
 
-**Execution is isolated, not sandboxed.** Each submission runs in a fresh
-subprocess with a 10s wall clock, 5s CPU limit and a 512 MB address-space cap,
-so infinite loops and memory bombs are contained — verified. But nothing stops
-submitted code from reading your files or opening a socket. That is acceptable
-for a single-user tool on `127.0.0.1`, which is what this is. **Before exposing
-it to anyone else**, the child process must move into a real boundary: a
-network-less container with a read-only filesystem, gVisor/Firecracker, or a
-hosted judge such as Judge0 or Piston. The seam is one function —
-`run_submission()` in `backend/app/execute.py`.
+**Execution is sandboxed, and which sandbox is in use is never a guess.** Three
+backends exist behind one contract, and `auto` picks the strongest the host can
+provide:
 
-*Note: on macOS `RLIMIT_AS` is not always enforced, so a huge allocation may hit
-the wall-clock timeout instead of a clean `MemoryError`. Both are contained;
-only the error message differs.*
+| Backend | Isolation | Verified to block |
+|---|---|---|
+| `docker` | fresh container per submission: `--network none`, `--read-only`, `--user 65534`, `--cap-drop ALL`, `no-new-privileges`, pids/memory/CPU caps, tmpfs `/tmp` | writing the curriculum mount, network, `$HOME` reads, spawning programs |
+| `seatbelt` | macOS Seatbelt profile, kernel-enforced, on the same process | filesystem writes anywhere, network, `$HOME` reads, `exec` of anything but the interpreter |
+| `local` | subprocess with CPU and address-space rlimits — **not a sandbox** | runaway loops and memory bombs only |
+
+`FORGE_ENV=prod` **refuses to start on `local`** unless you set
+`FORGE_ALLOW_UNSAFE_EXECUTOR=1`. A deployment that silently degraded to the
+unsandboxed runner because the Docker socket was missing would look healthy and
+be wide open, so it is fatal rather than a warning. `/api/health` reports the
+resolved backend and whether it is sandboxed.
+
+The container image is deliberately almost empty — a Python interpreter and
+nothing else. The curriculum and the runner script are bind-mounted read-only, so
+adding a problem never means rebuilding it:
+
+```bash
+backend/docker/build.sh          # ~70 MB, python:3.12-alpine
+```
+
+*Measured overhead: ~150 ms per submission for the container versus ~40 ms for a
+bare subprocess. Worth it.*
 
 ## What counts as a submission
 
@@ -108,13 +127,20 @@ Stub detection is AST-based (`empty_bodies` in `child_runner.py`) because
 ```
 webapp/
 ├── backend/app/
-│   ├── repo.py          bridge to python/_harness — catalog, specs, starters
+│   ├── settings.py      every knob, from FORGE_* env vars, validated at import
+│   ├── db.py            connections, pragmas, retries, migrations, backup
+│   ├── store.py         queries only — no driver details, no pragmas
 │   ├── auth.py          scrypt, sessions, rate limiting, the CSRF guard
-│   ├── store.py         SQLite: users, sessions, submissions, bookmarks, notes
+│   ├── observability.py logging, request ids, error boundary, headers
+│   ├── cli.py           operational commands
+│   ├── executors/       local | seatbelt | docker, behind one contract
+│   ├── repo.py          bridge to python/_harness — catalog, specs, starters
 │   ├── progress.py      joins repo (curriculum) with store (what you did)
 │   ├── child_runner.py  runs ONE submission, emits per-case JSON
-│   ├── execute.py       subprocess + timeouts + signal handling
-│   └── main.py          FastAPI routes
+│   ├── execute.py       dispatcher: size cap, concurrency cap, backend choice
+│   └── main.py          FastAPI routes and startup order
+├── backend/docker/      the sandbox image (runner.Dockerfile, build.sh)
+├── backend/tests/       102 tests: db, settings, auth, api, containment
 └── frontend/src/
     ├── lib/{api,types,format}.ts, app-data.tsx   one fetch, shared by all pages
     ├── lib/auth.tsx      who is signed in, and the requireAuth gate
@@ -153,7 +179,8 @@ spin.
 | POST | `/api/auth/password` | ✔ | change password, ends other sessions |
 | POST | `/api/auth/name` | ✔ | change display name |
 | POST | `/api/auth/logout-everywhere` | ✔ | keep this session, drop the rest |
-| GET | `/api/health` | — | liveness, python root, db path, user count |
+| GET | `/api/health` | — | config, schema version, db stats, executor; **503** if degraded |
+| GET | `/api/ready` | — | cheap readiness probe for a load balancer |
 | GET | `/api/meta` | — | languages, topics, totals |
 | GET | `/api/problems` | — | list; `?topic=&difficulty=&tested=&status=&bookmarked=&q=` |
 | GET | `/api/problems/random` | — | a random unsolved, auto-graded problem |
@@ -224,12 +251,124 @@ click is never wasted.
 * **No roles or sharing.** Accounts exist to separate progress, not to
   collaborate.
 
-### If you expose this beyond localhost
+### Still missing for a public rollout
 
-Auth is not the blocker — **execution is**. Submitted Python still runs with your
-user's filesystem access (see the isolation note above). Signing in does not
-sandbox it. Order of operations: container/Judge0 first, TLS second, then
-accounts are ready as they are.
+* **No email verification or password reset.** Both need a mail path. Until then
+  `app.cli reset-password` is the operator-run substitute, and it ends every
+  session for that account exactly as a self-service change would.
+* **No abuse controls beyond rate limiting.** There is nothing stopping one
+  account from submitting in a loop; `FORGE_EXEC_MAX_CONCURRENT` caps the damage
+  to the host but does not attribute it per user.
+* **No metrics endpoint.** The logs are structured and carry durations, which is
+  enough to answer questions after the fact, but there is no `/metrics` to scrape.
+
+## Configuration
+
+Everything is environment variables prefixed `FORGE_`, read once at startup.
+`backend/.env.example` documents every one with its default; there is no config
+file to forget to copy.
+
+Two settings have no safe default and are therefore **required in production**:
+
+- `FORGE_ALLOWED_ORIGINS` — the app refuses to guess. Guessing means either a
+  broken deployment or an allowlist wide enough to be no allowlist.
+- a sandboxed `FORGE_EXECUTOR` — see above.
+
+Values are validated at import, so a typo is a startup failure with a message
+rather than a subtly wrong runtime. `FORGE_SESSION_DAYS=forever` will not boot.
+
+## Running it for real
+
+```bash
+# 1. build the sandbox image
+backend/docker/build.sh
+
+# 2. check the configuration before taking traffic
+cd backend
+FORGE_ENV=prod \
+FORGE_ALLOWED_ORIGINS=https://forge.example \
+FORGE_DB_PATH=/var/lib/forge/forge.db \
+python3 -m app.cli check
+
+# 3. serve it
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Put a TLS-terminating reverse proxy in front, serve `frontend/dist` as static
+files from the same origin, and proxy `/api` to uvicorn. Same origin means the
+session cookie needs no `Domain` and CORS does nothing — which is the simplest
+correct arrangement.
+
+**One worker is the right starting point.** SQLite in WAL mode allows one writer
+with concurrent readers; this workload is overwhelmingly reads. `--workers 2` also
+works (the rate limiter and sessions are in the database, not in process memory),
+but the write lock is then shared, so measure before assuming it helps.
+
+If `FORGE_TRUST_PROXY_HEADERS=1`, be certain your proxy *overwrites*
+`X-Forwarded-For` rather than appending to whatever the client sent — otherwise
+rate limiting is bypassable with a header.
+
+## Ops
+
+```bash
+python3 -m app.cli check              # config, schema, executors, health
+python3 -m app.cli migrate            # bring the schema to head (idempotent)
+python3 -m app.cli backup [path]      # consistent copy, safe while running
+python3 -m app.cli vacuum             # reclaim space
+python3 -m app.cli users              # accounts, submission counts, sessions
+python3 -m app.cli delete-user EMAIL   # account + all its data (cascade)
+python3 -m app.cli reset-password EMAIL
+python3 -m app.cli purge-sessions
+```
+
+`backup` uses SQLite's online backup API, not a file copy: `cp` on a WAL database
+can capture a torn state because the newest committed data lives in the `-wal`
+file. Schedule it however you schedule anything — it needs no downtime.
+
+**Schema changes** are forward-only migrations in `db.MIGRATIONS`, versioned with
+`PRAGMA user_version` (stored in the file header, so it cannot drift from the
+schema it describes). Append a tuple, never edit a shipped one. This is the
+mechanism the extra material will use when you add it; `/api/health` returns 503
+if the running code expects a newer schema than the file has, so a half-finished
+rollout fails its health check instead of serving errors.
+
+## Tests
+
+```bash
+cd backend && python3 -m pytest tests -q        # 102 tests, ~30s
+```
+
+Each test gets its own database file and its own reloaded configuration, so they
+are order-independent. `scrypt` is turned down to 2¹² for the suite — with a
+matching test asserting production still uses 2¹⁵, because a fast test suite is
+worthless if it tests a weaker password hash than you ship.
+
+The containment tests (`test_executors.py`) attempt to write to the curriculum
+mount, open a socket, read `$HOME`, and spawn `/bin/ls` — against every sandbox
+the host offers. They *skip with a stated reason* when a backend is unavailable
+rather than passing quietly, so "all green" can never hide "the sandbox was never
+exercised".
+
+## If you outgrow SQLite
+
+The move to Postgres is contained on purpose. Everything SQLite-specific lives in
+`app/db.py`: `connect()`, the pragmas, the retry predicate, and the migration
+runner's use of `user_version`. `store.py` above it only issues SQL and never
+touches a driver detail or a pragma.
+
+What the swap involves:
+
+1. `db.py` — replace the connection helpers with a pool (`psycopg_pool`), keep the
+   same `transaction()` / `reading()` / `query_all()` surface, and move the schema
+   version into a table since `user_version` is SQLite's.
+2. `store.py` — `?` placeholders become `%s`; `INSERT OR REPLACE` becomes
+   `INSERT ... ON CONFLICT DO UPDATE` (the notes upsert already uses that form);
+   `AUTOINCREMENT` becomes `GENERATED BY DEFAULT AS IDENTITY`.
+3. Nothing else. `auth.py`, the routes, the executors and the whole frontend are
+   untouched, because none of them know where the data lives.
+
+The signal that it is time: sustained write contention, or wanting more than one
+machine. Read volume alone will not do it.
 
 ## Resetting your data
 

@@ -1,14 +1,14 @@
 """
-Persistence for submissions, bookmarks and notes.
+Queries. Nothing else.
 
-SQLite, one file under `backend/data/`. This is what turns the tool from an
-editor into a platform: solved-state, submission history and streaks all come
-from real rows rather than the browser's localStorage, so they survive a cache
-clear and can be queried across problems.
+Connection handling, pragmas, retries, transactions and migrations live in
+`db.py`; the schema lives there too, as versioned migrations. This module only
+issues SQL, which is what makes a future move to Postgres a matter of editing
+`db.py` and any query that used a SQLite-ism, rather than untangling storage
+concerns from application ones.
 
-Every user-scoped table carries a `user_id` referring to a row in `users`, and
-every function here takes that id explicitly. Nothing defaults to a current
-user: a query that silently fell back to some ambient default would be one
+Every user-scoped function takes its user id explicitly. Nothing defaults to an
+ambient "current user" -- a query that quietly fell back to one would be a single
 refactor away from showing one account's progress to another.
 """
 
@@ -16,111 +16,35 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from contextlib import contextmanager
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, List, Optional
 
-DB_PATH = Path(__file__).resolve().parents[1] / "data" / "forge.db"
+from . import db
+from .settings import settings
+
 # Kept only so a database written before accounts existed still opens; no
 # session can ever resolve to it, because it is not a row in `users`.
 LEGACY_USER = "local"
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    id            TEXT    PRIMARY KEY,
-    email         TEXT    NOT NULL,
-    name          TEXT    NOT NULL,
-    password_hash TEXT    NOT NULL,
-    created_at    REAL    NOT NULL,
-    last_login_at REAL
-);
--- Emails are stored lowercased; the unique index is what actually prevents two
--- accounts differing only by case, rather than trusting every call site.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users (email);
-
-CREATE TABLE IF NOT EXISTS sessions (
-    token_hash TEXT    PRIMARY KEY,
-    user_id    TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at REAL    NOT NULL,
-    touched_at REAL    NOT NULL,
-    expires_at REAL    NOT NULL,
-    user_agent TEXT    NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS ix_sessions_user ON sessions (user_id);
-CREATE INDEX IF NOT EXISTS ix_sessions_expiry ON sessions (expires_at);
-
-CREATE TABLE IF NOT EXISTS submissions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     TEXT    NOT NULL DEFAULT 'local',
-    problem_id  TEXT    NOT NULL,
-    language    TEXT    NOT NULL,
-    source      TEXT    NOT NULL,
-    verdict     TEXT    NOT NULL,
-    passed      INTEGER NOT NULL,
-    total       INTEGER NOT NULL,
-    elapsed_ms  REAL    NOT NULL,
-    created_at  REAL    NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_sub_user_problem
-    ON submissions (user_id, problem_id, id DESC);
-CREATE INDEX IF NOT EXISTS ix_sub_user_time
-    ON submissions (user_id, created_at);
-
-CREATE TABLE IF NOT EXISTS bookmarks (
-    user_id    TEXT NOT NULL DEFAULT 'local',
-    problem_id TEXT NOT NULL,
-    created_at REAL NOT NULL,
-    PRIMARY KEY (user_id, problem_id)
-);
-
-CREATE TABLE IF NOT EXISTS notes (
-    user_id    TEXT NOT NULL DEFAULT 'local',
-    problem_id TEXT NOT NULL,
-    body       TEXT NOT NULL,
-    updated_at REAL NOT NULL,
-    PRIMARY KEY (user_id, problem_id)
-);
-"""
-
-
-@contextmanager
-def _conn() -> Iterator[sqlite3.Connection]:
-    """
-    A fresh connection per call.
-
-    FastAPI runs sync endpoints in a threadpool, so a shared connection would
-    need `check_same_thread=False` plus a lock. Per-call connections to a local
-    file are cheap and sidestep that entirely. WAL keeps a write from blocking
-    the reads that the dashboard fires alongside it.
-    """
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=5.0)
-    conn.row_factory = sqlite3.Row
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+#: Re-exported so callers that report paths do not each reach into settings.
+DB_PATH = settings.db_path
 
 
 def init() -> None:
-    with _conn() as conn:
-        conn.executescript(_SCHEMA)
+    """Open the database and run migrations. Delegates to db.init()."""
+    db.init()
 
-
-# ------------------------------------------------------------------- users
 
 class EmailTaken(Exception):
     """Raised instead of leaking a raw sqlite3.IntegrityError to the route."""
 
 
+# ------------------------------------------------------------------- users
+
 def create_user(user_id: str, email: str, name: str,
                 password_hash: str) -> Dict[str, Any]:
     now = time.time()
-    with _conn() as conn:
+    with db.transaction() as conn:
         try:
             conn.execute(
                 "INSERT INTO users (id, email, name, password_hash, created_at)"
@@ -133,38 +57,38 @@ def create_user(user_id: str, email: str, name: str,
 
 
 def user_by_email(email: str) -> Optional[Dict[str, Any]]:
-    with _conn() as conn:
+    with db.reading() as conn:
         row = conn.execute("SELECT * FROM users WHERE email = ?",
                            (email,)).fetchone()
     return dict(row) if row else None
 
 
 def user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
-    with _conn() as conn:
+    with db.reading() as conn:
         row = conn.execute("SELECT * FROM users WHERE id = ?",
                            (user_id,)).fetchone()
     return dict(row) if row else None
 
 
 def set_password(user_id: str, password_hash: str) -> None:
-    with _conn() as conn:
+    with db.transaction() as conn:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                      (password_hash, user_id))
 
 
 def set_name(user_id: str, name: str) -> None:
-    with _conn() as conn:
+    with db.transaction() as conn:
         conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
 
 
 def mark_login(user_id: str) -> None:
-    with _conn() as conn:
+    with db.transaction() as conn:
         conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?",
                      (time.time(), user_id))
 
 
 def user_count() -> int:
-    with _conn() as conn:
+    with db.reading() as conn:
         return int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 
 
@@ -173,7 +97,7 @@ def user_count() -> int:
 def create_session(token_hash: str, user_id: str, ttl_seconds: int,
                    user_agent: str = "") -> None:
     now = time.time()
-    with _conn() as conn:
+    with db.transaction() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO sessions (token_hash, user_id, created_at,"
             " touched_at, expires_at, user_agent) VALUES (?,?,?,?,?,?)",
@@ -185,7 +109,7 @@ def create_session(token_hash: str, user_id: str, ttl_seconds: int,
 
 def session_user(token_hash: str) -> Optional[Dict[str, Any]]:
     """The user for a live session, with the session's touched_at attached."""
-    with _conn() as conn:
+    with db.reading() as conn:
         row = conn.execute(
             "SELECT u.*, s.touched_at AS session_touched "
             "FROM sessions s JOIN users u ON u.id = s.user_id "
@@ -196,20 +120,20 @@ def session_user(token_hash: str) -> Optional[Dict[str, Any]]:
 
 def touch_session(token_hash: str, ttl_seconds: int) -> None:
     now = time.time()
-    with _conn() as conn:
+    with db.transaction() as conn:
         conn.execute(
             "UPDATE sessions SET touched_at = ?, expires_at = ? "
             "WHERE token_hash = ?", (now, now + ttl_seconds, token_hash))
 
 
 def delete_session(token_hash: str) -> None:
-    with _conn() as conn:
+    with db.transaction() as conn:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
 
 
 def delete_user_sessions(user_id: str, keep_token_hash: str = "") -> int:
     """Sign out everywhere. Used on password change, which must invalidate."""
-    with _conn() as conn:
+    with db.transaction() as conn:
         cur = conn.execute(
             "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
             (user_id, keep_token_hash))
@@ -217,7 +141,7 @@ def delete_user_sessions(user_id: str, keep_token_hash: str = "") -> int:
 
 
 def session_count(user_id: str) -> int:
-    with _conn() as conn:
+    with db.reading() as conn:
         return int(conn.execute(
             "SELECT COUNT(*) FROM sessions WHERE user_id = ? AND expires_at > ?",
             (user_id, time.time())).fetchone()[0])
@@ -238,7 +162,7 @@ def record_submission(user: str, problem_id: str, language: str, source: str,
     verdict = summary.get("verdict", "")
     if verdict not in KEEP_VERDICTS:
         return None
-    with _conn() as conn:
+    with db.transaction() as conn:
         cur = conn.execute(
             "INSERT INTO submissions (user_id, problem_id, language, source, "
             "verdict, passed, total, elapsed_ms, created_at) "
@@ -278,13 +202,13 @@ def submissions(user: str, problem_id: Optional[str] = None,
     # than a slightly slower sort.
     sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
     args.append(max(1, min(limit, 500)))
-    with _conn() as conn:
+    with db.reading() as conn:
         rows = conn.execute(sql, args).fetchall()
     return [_row_to_submission(r, with_source=False) for r in rows]
 
 
 def submission(sub_id: int, user: str) -> Optional[Dict[str, Any]]:
-    with _conn() as conn:
+    with db.reading() as conn:
         row = conn.execute(
             "SELECT * FROM submissions WHERE id = ? AND user_id = ?",
             (sub_id, user)).fetchone()
@@ -299,7 +223,7 @@ def statuses(user: str) -> Dict[str, str]:
     a status for all 342 rows at once, and MAX over a grouped boolean is enough
     to say whether any attempt was ever accepted.
     """
-    with _conn() as conn:
+    with db.reading() as conn:
         rows = conn.execute(
             "SELECT problem_id, MAX(verdict = 'accepted') AS ok "
             "FROM submissions WHERE user_id = ? GROUP BY problem_id",
@@ -309,7 +233,7 @@ def statuses(user: str) -> Dict[str, str]:
 
 
 def attempt_counts(user: str) -> Dict[str, int]:
-    with _conn() as conn:
+    with db.reading() as conn:
         rows = conn.execute(
             "SELECT problem_id, COUNT(*) AS n FROM submissions "
             "WHERE user_id = ? GROUP BY problem_id", (user,)).fetchall()
@@ -328,7 +252,7 @@ def activity(user: str, days: int = 365) -> Dict[str, Any]:
     wrong moment for most of the world.
     """
     since = time.time() - days * 86400
-    with _conn() as conn:
+    with db.reading() as conn:
         rows = conn.execute(
             "SELECT created_at, verdict, problem_id FROM submissions "
             "WHERE user_id = ? AND created_at >= ? ORDER BY created_at",
@@ -387,7 +311,7 @@ def _longest_streak(active: set) -> int:
 # ----------------------------------------------------------------- bookmarks
 
 def bookmarks(user: str) -> List[str]:
-    with _conn() as conn:
+    with db.reading() as conn:
         rows = conn.execute(
             "SELECT problem_id FROM bookmarks WHERE user_id = ? "
             "ORDER BY created_at DESC", (user,)).fetchall()
@@ -396,7 +320,7 @@ def bookmarks(user: str) -> List[str]:
 
 def toggle_bookmark(problem_id: str, user: str) -> bool:
     """Returns the new state: True if now bookmarked."""
-    with _conn() as conn:
+    with db.transaction() as conn:
         existing = conn.execute(
             "SELECT 1 FROM bookmarks WHERE user_id = ? AND problem_id = ?",
             (user, problem_id)).fetchone()
@@ -414,7 +338,7 @@ def toggle_bookmark(problem_id: str, user: str) -> bool:
 # --------------------------------------------------------------------- notes
 
 def note(problem_id: str, user: str) -> Dict[str, Any]:
-    with _conn() as conn:
+    with db.reading() as conn:
         row = conn.execute(
             "SELECT body, updated_at FROM notes "
             "WHERE user_id = ? AND problem_id = ?",
@@ -427,7 +351,7 @@ def note(problem_id: str, user: str) -> Dict[str, Any]:
 
 def save_note(problem_id: str, body: str, user: str) -> Dict[str, Any]:
     now = time.time()
-    with _conn() as conn:
+    with db.transaction() as conn:
         if body.strip():
             conn.execute(
                 "INSERT INTO notes (user_id, problem_id, body, updated_at) "
@@ -446,7 +370,62 @@ def save_note(problem_id: str, body: str, user: str) -> Dict[str, Any]:
 
 
 def noted_problems(user: str) -> List[str]:
-    with _conn() as conn:
+    with db.reading() as conn:
         rows = conn.execute(
             "SELECT problem_id FROM notes WHERE user_id = ?", (user,)).fetchall()
     return [r["problem_id"] for r in rows]
+
+
+# ------------------------------------------------------- rate limiting
+
+def record_attempt(bucket: str, client: str) -> None:
+    """Log one failed attempt. Persisted, so a restart is not a way around it."""
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO auth_attempts (bucket, client, created_at) "
+            "VALUES (?,?,?)", (bucket, client, time.time()))
+        # Opportunistic pruning while we already hold the write lock. Ten
+        # windows of history is plenty for any future forensics and keeps the
+        # table from growing without bound.
+        cutoff = time.time() - settings.rate_window_seconds * 10
+        conn.execute("DELETE FROM auth_attempts WHERE created_at < ?", (cutoff,))
+
+
+def count_attempts(bucket: str, client: str) -> int:
+    since = time.time() - settings.rate_window_seconds
+    with db.reading() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM auth_attempts "
+            "WHERE bucket = ? AND client = ? AND created_at >= ?",
+            (bucket, client, since)).fetchone()
+    return int(row[0]) if row else 0
+
+
+def oldest_attempt(bucket: str, client: str) -> Optional[float]:
+    since = time.time() - settings.rate_window_seconds
+    with db.reading() as conn:
+        row = conn.execute(
+            "SELECT MIN(created_at) FROM auth_attempts "
+            "WHERE bucket = ? AND client = ? AND created_at >= ?",
+            (bucket, client, since)).fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
+def clear_attempts(bucket: str, client: str) -> None:
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM auth_attempts WHERE bucket = ? AND client = ?",
+                     (bucket, client))
+
+
+def delete_user(user_id: str) -> bool:
+    """Remove an account and everything it owns (via ON DELETE CASCADE)."""
+    with db.transaction() as conn:
+        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        return cur.rowcount > 0
+
+
+def purge_expired_sessions() -> int:
+    with db.transaction() as conn:
+        cur = conn.execute("DELETE FROM sessions WHERE expires_at < ?",
+                           (time.time(),))
+        return cur.rowcount

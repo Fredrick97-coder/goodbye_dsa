@@ -1,9 +1,9 @@
 """
 FastAPI backend for the DSA practice platform.
 
-Serves the 342 problems and 377 reference specs that already live under
-`python/_harness`, grades submissions against them, and keeps each account's
-progress in SQLite (see store.py and auth.py).
+Serves the 342 problems and 377 reference specs that live under
+`python/_harness`, grades submissions against them in an isolated executor, and
+keeps each account's progress in SQLite.
 
 Three tiers of access, deliberately:
 
@@ -14,12 +14,20 @@ Three tiers of access, deliberately:
   bookmarks and notes. Anything that reads or writes an account's data.
 * **Nobody** -- another user's data. Every query is scoped by the session's user
   id, never by a parameter the client can set.
+
+Startup order matters and is enforced in `lifespan`: configure logging, open and
+migrate the database, resolve which executor is in use, and refuse to serve at
+all if that executor is unsafe for the environment. A server that came up
+healthy while silently unable to isolate submissions would be the worst possible
+outcome, so it is fatal rather than a warning.
 """
 
 from __future__ import annotations
 
+import logging
 import random
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
@@ -27,31 +35,83 @@ from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import auth, progress, repo, store
+from . import auth, db, executors, progress, repo, settings as config, store
 from .execute import run_submission
+from .observability import (BodyLimitMiddleware, RequestContextMiddleware,
+                            SecurityHeadersMiddleware, configure_logging,
+                            install_exception_handlers)
+from .settings import settings
+
+log = logging.getLogger("forge.api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    configure_logging()
+
+    db.init()
+    version = db.current_version()
+
+    resolved = config.resolve_executor()
+    object.__setattr__(settings, "resolved_executor", resolved)
+    config.check_safety(resolved)          # fatal in prod on an unsafe runner
+
+    reasons = executors.availability()
+    log.info("forge starting: env=%s schema=v%d executor=%s (safe=%s)",
+             settings.env, version, resolved, executors.is_safe(resolved))
+    for name in ("docker", "seatbelt", "local"):
+        log.debug("  executor %-8s %-11s %s", name,
+                  "available" if reasons[name] else "unavailable",
+                  reasons[f"{name}_reason"])
+    if not executors.is_safe(resolved):
+        log.warning("submissions run WITHOUT a sandbox (%s): fine for local "
+                    "development, never for a deployment", resolved)
+
+    purged = store.purge_expired_sessions()
+    if purged:
+        log.info("purged %d expired session(s)", purged)
+
+    try:
+        yield
+    finally:
+        db.close_all()
+        log.info("forge stopped")
+
 
 app = FastAPI(
     title="DSA Practice Platform",
     description="Serves the repo's own problems and reference tests.",
-    version="0.3.0",
+    version="0.4.0",
+    lifespan=lifespan,
+    # Interactive docs are useful locally and are attack surface in production.
+    docs_url=None if settings.is_prod else "/docs",
+    redoc_url=None,
+    openapi_url=None if settings.is_prod else "/openapi.json",
 )
 
-# The Vite dev server runs on 5173/5174; the API on 8000. `allow_credentials`
-# is what lets the session cookie travel, and it is why the origin regex has to
-# stay narrow -- browsers refuse a wildcard origin with credentials, and it
-# would be the wrong thing here anyway.
+install_exception_handlers(app)
+
+# Order matters: middleware added last runs first, so the request id is assigned
+# before anything else can log, and the body limit is enforced before a handler
+# reads the body.
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(BodyLimitMiddleware)
+app.add_middleware(RequestContextMiddleware)
+
+# `allow_credentials` is what lets the session cookie travel, and it is why the
+# origin list has to stay narrow -- browsers refuse a wildcard origin with
+# credentials, and it would be the wrong thing here anyway. Both this and
+# auth.check_origin read the same settings, so they cannot drift apart.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origins=settings.allowed_origins,
+    allow_origin_regex=settings.allowed_origin_regex,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
+    max_age=600,
 )
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    store.init()
 
 
 # ------------------------------------------------------------------- models
@@ -208,8 +268,34 @@ def logout_everywhere(request: Request,
 
 @app.get("/api/health")
 def health() -> Dict[str, Any]:
-    return {"status": "ok", "pythonRoot": str(repo.PYTHON_ROOT),
-            "db": str(store.DB_PATH), "users": store.user_count()}
+    """
+    Liveness plus enough detail to diagnose a bad deployment.
+
+    Returns 503 when the database is unreachable or its schema is not the one
+    this code expects -- a health check that answers "ok" while the schema is a
+    version behind is how a broken rollout stays up.
+    """
+    ok, detail = db.healthy()
+    body: Dict[str, Any] = {
+        "status": "ok" if ok else "degraded",
+        "detail": detail,
+        "config": config.summary(),
+        "db": db.stats(),
+        "executorSafe": executors.is_safe(settings.resolved_executor or "local"),
+        "pythonRoot": str(repo.PYTHON_ROOT),
+    }
+    if not ok:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail)
+    return body
+
+
+@app.get("/api/ready")
+def ready() -> Dict[str, Any]:
+    """Cheap readiness probe: no row counts, no file size, just a query."""
+    ok, detail = db.healthy()
+    if not ok:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail)
+    return {"status": "ready"}
 
 
 @app.get("/api/meta")
