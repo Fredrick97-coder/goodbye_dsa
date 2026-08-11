@@ -1,18 +1,27 @@
-# Forge — a coding-practice workspace for this repo
+# Forge — a coding-practice platform for this repo
 
-A LeetCode-style workspace that serves **this repository's own 342 problems**
-and grades submissions against **its own ~296 reference tests**. Nothing is
-duplicated: the problem text is parsed from the `exercise.py` files and the
-tests are the same specs that `python check.py` runs.
+A LeetCode-style platform that serves **this repository's own 342 problems** and
+grades submissions against **its own ~296 reference tests**. Nothing is
+duplicated: the problem text is parsed from the `exercise.py` files and the tests
+are the same specs that `python check.py` runs.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  header: brand · problem · language · Reset · Run · Submit   │
-├───────────┬──────────────────────┬───────────────────────────┤
-│  problem  │  statement           │  Monaco editor            │
-│  list     │  (input/output,      ├───────────────────────────┤
-│  + filters│   example, grading)  │  Test Results │ Console   │
-└───────────┴──────────────────────┴───────────────────────────┘
+Dashboard  /            rings, streak, heatmap, suggested next, 22 topic tracks
+Problems   /problems    full problem set — status, filters, search, bookmarks
+Solve      /problems/03-07   statement | editor + results, with Submissions & Notes
+Progress   /progress    activity heatmap, per-difficulty, per-topic, full history
+```
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│ Forge │ Dashboard · Problems · Progress        88/342 · Random    │
+├───────────────────────────────────────────────────────────────────┤
+│ ☰ ← → Longest Palindromic Substring  Hard ✓Solved ★  Py · Run ·▶  │
+├──────────┬──────────────────────────┬─────────────────────────────┤
+│ switcher │ Description │ Submissions │  Monaco editor             │
+│ (topic-  │ Notes       │             ├─────────────────────────────┤
+│  scoped) │ statement, grading rules  │  Test Results │ Console    │
+└──────────┴──────────────────────────┴─────────────────────────────┘
 ```
 
 ## Run it
@@ -30,25 +39,27 @@ cd backend  && pip install -r requirements.txt
 cd frontend && npm install
 ```
 
-The API needs no separate install if you already have `fastapi` and `uvicorn`.
-
 ## What works today
 
 | Feature | Status |
 |---|---|
-| 342 problems across 22 topics, grouped and filterable | ✅ |
-| Search by title, topic, or function name | ✅ |
+| 342 problems across 22 topics, four pages, real URLs | ✅ |
+| Problem set: status / difficulty / topic / graded / bookmarked filters, all in the URL | ✅ |
 | Starter code pulled from the real `exercise.py` stub | ✅ |
 | Grading against the repo's reference specs | ✅ (275 problems) |
 | Per-case results: input / expected / got | ✅ |
-| Randomized trials, not just fixed cases | ✅ |
+| Randomized trials, not just the fixed examples | ✅ |
 | Verdicts: Accepted / Wrong Answer / Runtime Error / Not Attempted | ✅ |
+| **Submission history per problem, with the code you wrote** | ✅ (SQLite) |
+| **Solved / attempted state, server-side** | ✅ (SQLite) |
+| **Streaks, activity heatmap, per-topic and per-difficulty progress** | ✅ |
+| **Per-problem notes, autosaved** | ✅ |
+| **Bookmarks, random unsolved problem, prev/next navigation** | ✅ |
 | `stdout` capture and a Console tab | ✅ |
-| Drafts autosaved per problem, survive refresh | ✅ |
-| Solved-state and progress in the sidebar | ✅ (localStorage) |
+| Drafts autosaved per problem, survive refresh | ✅ (localStorage) |
 | Resizable panels, `⌘↵` submit, `⌘'` run | ✅ |
 | Languages other than Python | ⛔ see below |
-| Accounts, server-side progress | ⛔ next step |
+| Accounts / multiple users | ⛔ next step, seams below |
 
 ## Honest limitations
 
@@ -57,12 +68,13 @@ repo has folders for, but the seven others are visibly disabled rather than
 silently broken. The reason is structural: the reference tests *are* Python —
 they import your function and compare against `math.comb`, `itertools`, or a
 brute-force reference. Supporting Java or C++ means a second test format
-(stdin/stdout fixtures per problem), not just another compiler. The API
-returns a clear `400` explaining this rather than pretending.
+(stdin/stdout fixtures per problem), not just another compiler. The API returns
+a clear `400` explaining this rather than pretending.
 
-**Two topics have no auto-grading.** Queues (05) and Advanced Trees (17) have
-no specs yet, so they load and run but are not graded. The UI marks them with
-an amber dot in the list and a "no auto-grading" chip on the editor.
+**Two topics have no auto-grading.** Queues (05) and Advanced Trees (17) have no
+specs yet, so they load and run but are not graded. The UI marks them with an
+amber dot in the list, `manual` in the Tests column, and a "no auto-grading"
+chip on the editor.
 
 **Execution is isolated, not sandboxed.** Each submission runs in a fresh
 subprocess with a 10s wall clock, 5s CPU limit and a 512 MB address-space cap,
@@ -71,12 +83,23 @@ submitted code from reading your files or opening a socket. That is acceptable
 for a single-user tool on `127.0.0.1`, which is what this is. **Before exposing
 it to anyone else**, the child process must move into a real boundary: a
 network-less container with a read-only filesystem, gVisor/Firecracker, or a
-hosted judge such as Judge0 or Piston. The seam for this is one function —
+hosted judge such as Judge0 or Piston. The seam is one function —
 `run_submission()` in `backend/app/execute.py`.
 
-*Note: on macOS `RLIMIT_AS` is not always enforced, so a huge allocation may
-hit the wall-clock timeout instead of a clean `MemoryError`. Both are contained;
+*Note: on macOS `RLIMIT_AS` is not always enforced, so a huge allocation may hit
+the wall-clock timeout instead of a clean `MemoryError`. Both are contained;
 only the error message differs.*
+
+## What counts as a submission
+
+Pressing **Run** never records anything — it is a scratchpad. Pressing **Submit**
+records the attempt *unless* the verdict is `stub`, i.e. you submitted untouched
+starter code. Both rules exist so the history and the "attempted" count mean
+something: with 394 stubs in the repo, recording empty submits would drown the
+two problems you actually got wrong.
+
+Stub detection is AST-based (`empty_bodies` in `child_runner.py`) because
+`inspect.getsource` cannot see code that arrived as a string and was `exec`'d.
 
 ## Architecture
 
@@ -84,52 +107,79 @@ only the error message differs.*
 webapp/
 ├── backend/app/
 │   ├── repo.py          bridge to python/_harness — catalog, specs, starters
+│   ├── store.py         SQLite: submissions, bookmarks, notes
+│   ├── progress.py      joins repo (curriculum) with store (what you did)
 │   ├── child_runner.py  runs ONE submission, emits per-case JSON
 │   ├── execute.py       subprocess + timeouts + signal handling
 │   └── main.py          FastAPI routes
 └── frontend/src/
-    ├── lib/{api,types}.ts
-    └── components/{Statement,Editor,Results,ProblemList,ui}.tsx
+    ├── lib/{api,types,format}.ts, app-data.tsx   one fetch, shared by all pages
+    ├── routes/{Dashboard,Problems,Solve,Progress}.tsx
+    └── components/{Shell,Statement,Editor,Results,SubmissionsTab,
+                    NotesTab,ProblemList,Heatmap,ui}.tsx
 ```
 
-Two deliberate choices:
+Four deliberate choices:
 
 - **The repo is the single source of truth.** `repo.py` reads `_harness.catalog`
   and `_harness.specs`. Add a problem or a spec to `python/` and it appears here
   with no changes to the webapp.
+- **Progress is server-side.** localStorage keeps drafts only. Solved-state,
+  history, streaks and notes live in `backend/data/forge.db`, so they survive a
+  cache clear and can be queried across problems.
+- **Every table carries a `user_id`** (constant `"local"` today). Adding accounts
+  becomes a change to how `user_id` is resolved, not a migration.
 - **Vite proxies `/api` to the backend**, so the browser sees one origin. No CORS
   in dev, no hardcoded `localhost:8000` in the frontend.
+
+The whole problem list (342 rows, ~90 KB) is fetched once into `app-data.tsx` and
+filtered in memory, so filters and search are instant and page transitions never
+spin.
 
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | liveness |
+| GET | `/api/health` | liveness, python root, db path |
 | GET | `/api/meta` | languages, topics, totals |
-| GET | `/api/problems` | list; `?topic=&difficulty=&tested=&q=` |
-| GET | `/api/problems/{id}` | detail + starter code + grading notes |
+| GET | `/api/problems` | list; `?topic=&difficulty=&tested=&status=&bookmarked=&q=` |
+| GET | `/api/problems/random` | a random unsolved, auto-graded problem |
+| GET | `/api/problems/{id}` | detail + starter code + grading notes + prev/next |
 | POST | `/api/submit` | `{problemId, language, source, mode}` → report |
+| GET | `/api/submissions` | history; `?problemId=&limit=` |
+| GET | `/api/submissions/{id}` | one submission, including its source |
+| GET | `/api/progress` | dashboard aggregate: totals, difficulty, topics, activity |
+| GET | `/api/activity` | daily buckets for the heatmap; `?days=` |
+| GET·POST | `/api/bookmarks[/{id}]` | list / toggle |
+| GET·PUT | `/api/notes/{id}` | read / save (an empty body deletes) |
 
 `mode` is `test` (grade it) or `run` (just execute and show stdout).
 Interactive docs at **http://127.0.0.1:8000/docs**.
 
+`/api/problems/random` is declared before `/api/problems/{id}` on purpose —
+FastAPI matches in order, so the reverse would read "random" as a problem id.
+
 ## Adding authentication later
 
-The seams are already in place:
+1. `backend/app/store.py` — every function already takes `user: str = LOCAL_USER`.
+   Replace the default with a FastAPI dependency that resolves the session.
+2. `backend/app/main.py` — add that dependency to the routes. No grading code
+   changes; no schema changes.
+3. `frontend/src/lib/api.ts` — `drafts` is the only remaining localStorage user,
+   and it can stay local.
 
-1. `frontend/src/lib/api.ts` — `progress` and `drafts` are the only two
-   localStorage users. Swap their bodies for `fetch` calls and the UI is done.
-2. `backend/app/main.py` — add a dependency for the current user and a
-   `submissions` table. The grading path does not change.
-3. `POST /api/submit` already returns everything a history record needs:
-   verdict, passed/total, elapsed ms, and per-case detail.
+## Resetting your data
+
+```bash
+rm backend/data/forge.db      # then restart the API; the schema is recreated
+```
 
 ## Design notes
 
 Deliberately not a LeetCode clone: a cool slate base (`#070a12`) with a single
-electric violet accent (`#6d4aff`), Inter for UI and JetBrains Mono for code,
-and a hand-written Monaco theme matched to the palette. Verdict state is echoed
-as a coloured ring on the results panel so it reads at a glance.
+electric violet accent (`#6d4aff`), Inter for UI and JetBrains Mono for code, and
+a hand-written Monaco theme matched to the palette. Verdict state is echoed as a
+coloured ring around the results panel so it reads at a glance.
 
 Layout, colours and fonts are all in `frontend/tailwind.config.js` and
 `frontend/src/index.css`.

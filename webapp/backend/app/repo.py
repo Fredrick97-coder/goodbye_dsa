@@ -245,3 +245,24 @@ def stats() -> Dict[str, Any]:
         "byDifficulty": by_diff,
         "specCount": sum(len(v) for v in load_all().values()),
     }
+
+
+def problem_ids() -> List[str]:
+    return [f"{p.topic:02d}-{p.num:02d}" for p in all_problems()]
+
+
+def neighbors(problem_id: str) -> Dict[str, Optional[str]]:
+    """
+    Previous/next in curriculum order, for the arrows in the solve view.
+
+    Ordering follows the catalogue, so "next" means the next problem in the
+    course rather than the next id numerically -- topics do not all have the
+    same number of problems.
+    """
+    ids = problem_ids()
+    try:
+        i = ids.index(problem_id)
+    except ValueError:
+        return {"prevId": None, "nextId": None}
+    return {"prevId": ids[i - 1] if i > 0 else None,
+            "nextId": ids[i + 1] if i + 1 < len(ids) else None}
