@@ -1,7 +1,7 @@
 # Forge — a coding-practice platform for this repo
 
 A LeetCode-style platform that serves **this repository's own 342 problems** and
-grades submissions against **its own ~296 reference tests**. Nothing is
+grades submissions against **its own 377 reference specs**. Nothing is
 duplicated: the problem text is parsed from the `exercise.py` files and the tests
 are the same specs that `python check.py` runs.
 
@@ -46,7 +46,7 @@ cd frontend && npm install
 | 342 problems across 22 topics, four pages, real URLs | ✅ |
 | Problem set: status / difficulty / topic / graded / bookmarked filters, all in the URL | ✅ |
 | Starter code pulled from the real `exercise.py` stub | ✅ |
-| Grading against the repo's reference specs | ✅ (275 problems) |
+| Grading against the repo's reference specs | ✅ (340 of 342 problems) |
 | Per-case results: input / expected / got | ✅ |
 | Randomized trials, not just the fixed examples | ✅ |
 | Verdicts: Accepted / Wrong Answer / Runtime Error / Not Attempted | ✅ |
@@ -59,7 +59,8 @@ cd frontend && npm install
 | Drafts autosaved per problem, survive refresh | ✅ (localStorage) |
 | Resizable panels, `⌘↵` submit, `⌘'` run | ✅ |
 | Languages other than Python | ⛔ see below |
-| Accounts / multiple users | ⛔ next step, seams below |
+| **Accounts, with per-user progress** | ✅ (scrypt + server-side sessions) |
+| **Browse and Run without an account; the gate is at Submit** | ✅ |
 
 ## Honest limitations
 
@@ -71,10 +72,11 @@ brute-force reference. Supporting Java or C++ means a second test format
 (stdin/stdout fixtures per problem), not just another compiler. The API returns
 a clear `400` explaining this rather than pretending.
 
-**Two topics have no auto-grading.** Queues (05) and Advanced Trees (17) have no
-specs yet, so they load and run but are not graded. The UI marks them with an
-amber dot in the list, `manual` in the Tests column, and a "no auto-grading"
-chip on the editor.
+**Two problems have no auto-grading**, and they are the two that cannot have
+any: `01-10 Complexity Analysis` asks you to analyse a function that is already
+written, and `09-09 LRU Cache` specifies no interface to call. Everything else
+— all 340 — is graded. The UI marks the two with an amber dot in the list,
+`manual` in the Tests column, and a "no auto-grading" chip on the editor.
 
 **Execution is isolated, not sandboxed.** Each submission runs in a fresh
 subprocess with a 10s wall clock, 5s CPU limit and a 512 MB address-space cap,
@@ -107,16 +109,19 @@ Stub detection is AST-based (`empty_bodies` in `child_runner.py`) because
 webapp/
 ├── backend/app/
 │   ├── repo.py          bridge to python/_harness — catalog, specs, starters
-│   ├── store.py         SQLite: submissions, bookmarks, notes
+│   ├── auth.py          scrypt, sessions, rate limiting, the CSRF guard
+│   ├── store.py         SQLite: users, sessions, submissions, bookmarks, notes
 │   ├── progress.py      joins repo (curriculum) with store (what you did)
 │   ├── child_runner.py  runs ONE submission, emits per-case JSON
 │   ├── execute.py       subprocess + timeouts + signal handling
 │   └── main.py          FastAPI routes
 └── frontend/src/
     ├── lib/{api,types,format}.ts, app-data.tsx   one fetch, shared by all pages
+    ├── lib/auth.tsx      who is signed in, and the requireAuth gate
     ├── routes/{Dashboard,Problems,Solve,Progress}.tsx
-    └── components/{Shell,Statement,Editor,Results,SubmissionsTab,
-                    NotesTab,ProblemList,Heatmap,ui}.tsx
+    └── components/{Shell,AuthModal,AccountMenu,SignInPanel,Statement,
+                    Editor,Results,SubmissionsTab,NotesTab,ProblemList,
+                    Heatmap,ui}.tsx
 ```
 
 Four deliberate choices:
@@ -127,8 +132,9 @@ Four deliberate choices:
 - **Progress is server-side.** localStorage keeps drafts only. Solved-state,
   history, streaks and notes live in `backend/data/forge.db`, so they survive a
   cache clear and can be queried across problems.
-- **Every table carries a `user_id`** (constant `"local"` today). Adding accounts
-  becomes a change to how `user_id` is resolved, not a migration.
+- **Every user-scoped function takes its user id explicitly.** Nothing defaults
+  to an ambient "current user" -- a query that quietly fell back to one would be
+  a single refactor away from showing one account's progress to another.
 - **Vite proxies `/api` to the backend**, so the browser sees one origin. No CORS
   in dev, no hardcoded `localhost:8000` in the frontend.
 
@@ -138,20 +144,27 @@ spin.
 
 ## API
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/health` | liveness, python root, db path |
-| GET | `/api/meta` | languages, topics, totals |
-| GET | `/api/problems` | list; `?topic=&difficulty=&tested=&status=&bookmarked=&q=` |
-| GET | `/api/problems/random` | a random unsolved, auto-graded problem |
-| GET | `/api/problems/{id}` | detail + starter code + grading notes + prev/next |
-| POST | `/api/submit` | `{problemId, language, source, mode}` → report |
-| GET | `/api/submissions` | history; `?problemId=&limit=` |
-| GET | `/api/submissions/{id}` | one submission, including its source |
-| GET | `/api/progress` | dashboard aggregate: totals, difficulty, topics, activity |
-| GET | `/api/activity` | daily buckets for the heatmap; `?days=` |
-| GET·POST | `/api/bookmarks[/{id}]` | list / toggle |
-| GET·PUT | `/api/notes/{id}` | read / save (an empty body deletes) |
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/register` | — | create an account, sets the session cookie |
+| POST | `/api/auth/login` | — | sign in |
+| POST | `/api/auth/logout` | — | end this session |
+| GET | `/api/auth/me` | — | current user, or `{"user": null}` |
+| POST | `/api/auth/password` | ✔ | change password, ends other sessions |
+| POST | `/api/auth/name` | ✔ | change display name |
+| POST | `/api/auth/logout-everywhere` | ✔ | keep this session, drop the rest |
+| GET | `/api/health` | — | liveness, python root, db path, user count |
+| GET | `/api/meta` | — | languages, topics, totals |
+| GET | `/api/problems` | — | list; `?topic=&difficulty=&tested=&status=&bookmarked=&q=` |
+| GET | `/api/problems/random` | — | a random unsolved, auto-graded problem |
+| GET | `/api/problems/{id}` | — | detail + starter code + grading notes + prev/next |
+| POST | `/api/submit` | run: — · test: ✔ | `{problemId, language, source, mode}` → report |
+| GET | `/api/submissions` | ✔ | history; `?problemId=&limit=` |
+| GET | `/api/submissions/{id}` | ✔ | one submission, including its source |
+| GET | `/api/progress` | ✔ | dashboard aggregate: totals, difficulty, topics, activity |
+| GET | `/api/activity` | ✔ | daily buckets for the heatmap; `?days=` |
+| GET·POST | `/api/bookmarks[/{id}]` | ✔ | list / toggle |
+| GET·PUT | `/api/notes/{id}` | ✔ | read / save (an empty body deletes) |
 
 `mode` is `test` (grade it) or `run` (just execute and show stdout).
 Interactive docs at **http://127.0.0.1:8000/docs**.
@@ -159,19 +172,77 @@ Interactive docs at **http://127.0.0.1:8000/docs**.
 `/api/problems/random` is declared before `/api/problems/{id}` on purpose —
 FastAPI matches in order, so the reverse would read "random" as a problem id.
 
-## Adding authentication later
+## Accounts
 
-1. `backend/app/store.py` — every function already takes `user: str = LOCAL_USER`.
-   Replace the default with a FastAPI dependency that resolves the session.
-2. `backend/app/main.py` — add that dependency to the routes. No grading code
-   changes; no schema changes.
-3. `frontend/src/lib/api.ts` — `drafts` is the only remaining localStorage user,
-   and it can stay local.
+Sign-in is required to *record* anything, and nothing else. You can read every
+problem, open the editor, type, and press **Run** with no account at all — the
+prompt appears at **Submit**, which is the first moment your work would be
+stored. The pending submission is replayed automatically once you are in, so the
+click is never wasted.
+
+| Public | Signed in |
+|---|---|
+| problem list, statements, starter code | grading (`mode="test"`) |
+| `Run` (executes, records nothing) | submission history, with your code |
+| topic and difficulty filters | solved / attempted state, streaks, heatmap |
+| | bookmarks and per-problem notes |
+
+### How it works
+
+* **Passwords** are hashed with **scrypt** from the standard library
+  (n=2¹⁵ → 32 MB, ~50 ms per verification), with a per-user random salt. The
+  parameters are stored inside the hash string, so they can be raised later
+  without invalidating anyone's password — `needs_rehash` upgrades a hash
+  transparently on the next successful login.
+* **Sessions are opaque and server-side**: 32 random bytes in an HttpOnly,
+  SameSite=Lax cookie, stored only as a SHA-256 hash. That is what makes logout,
+  "sign out other devices", and revocation real. A JWT cannot be revoked before
+  it expires without a server-side blocklist, at which point it is a session
+  with extra steps.
+* `Secure` is set on the cookie unless the request is plain-http localhost, so
+  it is correct the moment this is served over TLS — no config flag to forget.
+* **Login failures are uniform.** Same message and the same scrypt cost whether
+  the email is unknown or the password is wrong, so timing and wording cannot be
+  used to enumerate accounts.
+* **Rate limited** to 8 failures per client per 15 minutes on login, register
+  and password change.
+* **Changing your password ends every other session**, which is the entire point
+  of changing it. The tab you changed it in stays signed in.
+* **Cross-origin state changes are refused** (`Origin` check) on top of
+  SameSite=Lax. A missing `Origin` is allowed so `curl` still works — browsers
+  always send it on the cross-site requests that matter.
+* **Every query is scoped by the session's user id**, never by a client
+  parameter. Asking for another account's submission returns 404, not their code.
+
+### What is deliberately not here
+
+* **No email verification and no password reset.** Both need a mail path, and
+  this runs on `127.0.0.1` with a SQLite file — a reset link nobody can receive
+  is worse than none. Reset a forgotten password by deleting the row.
+* **The rate limiter is in-process**, so it resets when the server restarts.
+  Honest for one process; move it into SQLite before running multi-worker.
+* **No roles or sharing.** Accounts exist to separate progress, not to
+  collaborate.
+
+### If you expose this beyond localhost
+
+Auth is not the blocker — **execution is**. Submitted Python still runs with your
+user's filesystem access (see the isolation note above). Signing in does not
+sandbox it. Order of operations: container/Judge0 first, TLS second, then
+accounts are ready as they are.
 
 ## Resetting your data
 
 ```bash
 rm backend/data/forge.db      # then restart the API; the schema is recreated
+```
+
+That also deletes every account. To reset one forgotten password without losing
+the rest, delete just that user (their submissions and sessions go with them,
+via `ON DELETE CASCADE`):
+
+```bash
+sqlite3 backend/data/forge.db "DELETE FROM users WHERE email = 'you@example.com';"
 ```
 
 ## Design notes

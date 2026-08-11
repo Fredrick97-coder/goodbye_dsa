@@ -1,3 +1,10 @@
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: number;
+}
+
 export type Difficulty = "Easy" | "Medium" | "Hard" | "Challenge";
 
 export type Verdict =

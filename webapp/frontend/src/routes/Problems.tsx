@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAppData } from "../lib/app-data";
+import { useAuth } from "../lib/auth";
 import { pct } from "../lib/format";
 import type { Difficulty, ProblemSummary } from "../lib/types";
 import { DifficultyText, Icon, StateMark } from "../components/ui";
@@ -114,6 +115,7 @@ function Row({ p, onStar }: { p: ProblemSummary; onStar: () => void }) {
 
 export default function Problems() {
   const { problems, meta, patch } = useAppData();
+  const { user, requireAuth } = useAuth();
   const f = useFilters();
 
   const filtered = useMemo(() => {
@@ -133,7 +135,10 @@ export default function Problems() {
 
   const solvedHere = filtered.filter((p) => p.status === "solved").length;
 
-  const star = async (p: ProblemSummary) => {
+  const star = (p: ProblemSummary) =>
+    requireAuth(() => void toggleStar(p), "Sign in to bookmark problems.");
+
+  const toggleStar = async (p: ProblemSummary) => {
     // Flip immediately, then confirm with the server. A star that waits for a
     // round trip feels broken even when the round trip is 4 ms.
     patch(p.id, { bookmarked: !p.bookmarked });
@@ -153,7 +158,7 @@ export default function Problems() {
           <div>
             <h1 className="text-[21px] font-bold tracking-tight text-white">Problem Set</h1>
             <p className="mt-1 text-[12.5px] text-mist-400">
-              {filtered.length} shown · {solvedHere} solved
+              {filtered.length} shown{user ? ` · ${solvedHere} solved` : ""}
               {f.active > 0 && " · filtered"}
             </p>
           </div>
@@ -203,8 +208,8 @@ export default function Problems() {
                 <span className="opacity-60">{meta?.stats.byDifficulty[d] ?? ""}</span>
               </Pill>
             ))}
-            <span className="mx-1 h-4 w-px bg-white/10" />
-            {STATES.map((s) => (
+            {user && <span className="mx-1 h-4 w-px bg-white/10" />}
+            {user && STATES.map((s) => (
               <Pill key={s.id} active={f.status === s.id} onClick={() => f.set("status", s.id)}
                     tone={s.id === "solved" ? "bg-mint-500" : s.id === "attempted" ? "bg-amber-500" : "bg-ink-600"}>
                 {s.label}
@@ -214,9 +219,11 @@ export default function Problems() {
             <Pill active={f.tested} onClick={() => f.set("tested", f.tested ? null : "1")} tone="bg-sky-500">
               <Icon name="flask" className="h-3 w-3" /> auto-graded
             </Pill>
-            <Pill active={f.starred} onClick={() => f.set("starred", f.starred ? null : "1")} tone="bg-amber-500">
-              <Icon name="star" className="h-3 w-3" /> bookmarked
-            </Pill>
+            {user && (
+              <Pill active={f.starred} onClick={() => f.set("starred", f.starred ? null : "1")} tone="bg-amber-500">
+                <Icon name="star" className="h-3 w-3" /> bookmarked
+              </Pill>
+            )}
           </div>
         </div>
 
@@ -239,11 +246,11 @@ export default function Problems() {
               Nothing matches those filters.
             </p>
           ) : (
-            filtered.map((p) => <Row key={p.id} p={p} onStar={() => void star(p)} />)
+            filtered.map((p) => <Row key={p.id} p={p} onStar={() => star(p)} />)
           )}
         </div>
 
-        {filtered.length > 0 && (
+        {filtered.length > 0 && user && (
           <p className="mt-4 text-center text-[11px] text-mist-400">
             {pct(solvedHere, filtered.length)}% of this view solved
           </p>

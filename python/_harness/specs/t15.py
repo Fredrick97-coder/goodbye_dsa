@@ -135,6 +135,57 @@ def g_gas(rng):
     return (gas, cost)
 
 
+def _code_lengths(codes):
+    """
+    Compare code LENGTHS, not the codes themselves.
+
+    Huffman codes are not unique -- swapping 0 and 1 at any node gives another
+    optimal code -- so no implementation can be expected to produce a specific
+    bit string. The length assigned to each symbol IS pinned down when no two
+    merge weights tie, which is why the fixed cases below use texts with
+    distinct frequency profiles rather than random ones.
+    """
+    if not isinstance(codes, dict) or not codes:
+        return None
+    if not all(isinstance(c, str) and set(c) <= {"0", "1"}
+               for c in codes.values()):
+        return None
+    # Prefix-freeness is the other half of correctness and does not depend on
+    # the tie-breaking at all.
+    values = sorted(codes.values(), key=len)
+    for i, a in enumerate(values):
+        for b in values[i + 1:]:
+            if b.startswith(a):
+                return None
+    return {ch: len(code) for ch, code in codes.items()}
+
+
+def _ref_remove_k(s, k):
+    """
+    Lexicographically smallest result after removing exactly k characters.
+
+    The exercise says only "number of operations", so this fixes the standard
+    reading (LeetCode 402's monotonic-stack greedy) and the note states it.
+    """
+    if k >= len(s):
+        return ""
+    stack = []
+    to_drop = k
+    for ch in s:
+        while stack and to_drop and stack[-1] > ch:
+            stack.pop()
+            to_drop -= 1
+        stack.append(ch)
+    if to_drop:
+        stack = stack[:-to_drop]
+    return "".join(stack)
+
+
+def g_remove_k(rng):
+    s = "".join(rng.choice("abcde") for _ in range(rng.randint(1, 12)))
+    return (s, rng.randint(0, len(s)))
+
+
 SPECS = [
     spec(1, "activity_selection", prop=lambda x: None if x is None else len(x),
          ref=_activity_selection, gen=g_intervals,
@@ -170,4 +221,21 @@ SPECS = [
     spec(11, "gas_station", ref=_gas_station, gen=g_gas,
          cases=[(([1, 2, 3, 4, 5], [3, 4, 5, 1, 2]), 3),
                 (([2, 3, 4], [3, 4, 3]), -1)]),
+
+    # Frequencies 4/3/2/1 and 6/4/2/1 leave no tie in the merge order, so the
+    # per-symbol code lengths are the same for every correct implementation.
+    spec(3, "huffman_coding", prop=_code_lengths,
+         cases=[(("aaaabbbccd",), {"a": 1, "b": 2, "c": 3, "d": 3}),
+                (("aaaaaabbbbccd",), {"a": 1, "b": 2, "c": 3, "d": 3}),
+                (("ab",), {"a": 1, "b": 1})],
+         note="graded on the code LENGTH per character plus prefix-freeness, "
+              "because Huffman codes are not unique -- flipping 0/1 at any "
+              "node is equally optimal"),
+
+    spec(12, "optimal_rearrange", ref=_ref_remove_k, gen=g_remove_k,
+         cases=[(("1432219", 3), "1219"), (("10200", 1), "0200"),
+                (("10", 2), "")],
+         note="the operation is REMOVING a character: delete exactly k of "
+              "them so what remains is lexicographically smallest, keeping "
+              "the original relative order"),
 ]

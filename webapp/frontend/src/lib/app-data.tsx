@@ -2,6 +2,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState,
 } from "react";
 import { api } from "./api";
+import { useAuth } from "./auth";
 import type { Meta, ProblemSummary } from "./types";
 
 /**
@@ -24,6 +25,7 @@ interface AppData {
 const Ctx = createContext<AppData | null>(null);
 
 export function AppDataProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [meta, setMeta] = useState<Meta | null>(null);
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +44,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  // Refetch when the signed-in account changes. The list carries per-user
+  // status, bookmarks and notes, so signing in or out has to re-pull it --
+  // otherwise one account's ticks stay on screen for the next.
+  useEffect(() => { void refresh(); }, [refresh, user?.id]);
 
   /**
    * Update one row without refetching the list.

@@ -16,19 +16,34 @@ DIFFICULTIES = ["Easy", "Medium", "Hard", "Challenge"]
 
 def _title_index() -> Dict[str, Dict[str, Any]]:
     return {f"{p.topic:02d}-{p.num:02d}": {
-        "title": p.title.title() if p.title.isupper() else p.title,
+        "title": repo.pretty_title(p.title),
         "difficulty": p.difficulty,
         "topic": p.topic,
         "topicName": p.topic_name,
     } for p in repo.all_problems()}
 
 
-def decorate(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Attach per-user state to problem summaries in one pass."""
-    status = store.statuses()
-    attempts = store.attempt_counts()
-    marked = set(store.bookmarks())
-    noted = set(store.noted_problems())
+def decorate(items: List[Dict[str, Any]],
+             user_id: Optional[str]) -> List[Dict[str, Any]]:
+    """
+    Attach per-user state to problem summaries in one pass.
+
+    `user_id` of None means signed out: every problem reads as "todo" with no
+    bookmarks or notes, which is exactly what an anonymous visitor should see.
+    Four queries become zero.
+    """
+    if user_id is None:
+        for item in items:
+            item["status"] = "todo"
+            item["attempts"] = 0
+            item["bookmarked"] = False
+            item["hasNote"] = False
+        return items
+
+    status = store.statuses(user_id)
+    attempts = store.attempt_counts(user_id)
+    marked = set(store.bookmarks(user_id))
+    noted = set(store.noted_problems(user_id))
     for item in items:
         pid = item["id"]
         item["status"] = status.get(pid, "todo")
@@ -38,10 +53,10 @@ def decorate(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return items
 
 
-def overview() -> Dict[str, Any]:
+def overview(user_id: str) -> Dict[str, Any]:
     """Everything the dashboard needs, in one round trip."""
     problems = repo.all_problems()
-    status = store.statuses()
+    status = store.statuses(user_id)
     titles = _title_index()
 
     by_difficulty = {d: {"total": 0, "solved": 0, "attempted": 0}
@@ -73,7 +88,7 @@ def overview() -> Dict[str, Any]:
             topic["attempted"] += 1
             attempted_total += 1
 
-    recent = store.submissions(limit=12)
+    recent = store.submissions(user_id, limit=12)
     for sub in recent:
         sub.update(titles.get(sub["problemId"], {}))
 
@@ -92,23 +107,23 @@ def overview() -> Dict[str, Any]:
             {**by_topic[t], "level": repo._level_for(t)}
             for t in sorted(by_topic)
         ],
-        "activity": store.activity(),
+        "activity": store.activity(user_id),
         "recent": recent,
-        "resume": _resume(),
-        "nextUp": _next_up(limit=5),
+        "resume": _resume(user_id),
+        "nextUp": _next_up(user_id, limit=5),
     }
 
 
-def _resume() -> Optional[Dict[str, Any]]:
+def _resume(user_id: str) -> Optional[Dict[str, Any]]:
     """
     The most recent problem that was worked on but not solved.
 
     "Continue where you left off" is only useful if it points at unfinished
     work -- linking back to something already accepted would be a dead end.
     """
-    status = store.statuses()
+    status = store.statuses(user_id)
     titles = _title_index()
-    for sub in store.submissions(limit=60):
+    for sub in store.submissions(user_id, limit=60):
         pid = sub["problemId"]
         if status.get(pid) != "solved" and pid in titles:
             return {"id": pid, **titles[pid], "verdict": sub["verdict"],
@@ -116,7 +131,7 @@ def _resume() -> Optional[Dict[str, Any]]:
     return None
 
 
-def _next_up(limit: int = 5) -> List[Dict[str, Any]]:
+def _next_up(user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
     """
     Suggested problems: untouched, auto-graded, in curriculum order.
 
@@ -124,7 +139,7 @@ def _next_up(limit: int = 5) -> List[Dict[str, Any]]:
     feedback on -- recommending an ungraded problem would send the learner
     somewhere the Submit button cannot help them.
     """
-    status = store.statuses()
+    status = store.statuses(user_id)
     out: List[Dict[str, Any]] = []
     for p in repo.all_problems():
         pid = f"{p.topic:02d}-{p.num:02d}"
@@ -132,7 +147,7 @@ def _next_up(limit: int = 5) -> List[Dict[str, Any]]:
             continue
         out.append({
             "id": pid,
-            "title": p.title.title() if p.title.isupper() else p.title,
+            "title": repo.pretty_title(p.title),
             "difficulty": p.difficulty,
             "topic": p.topic,
             "topicName": p.topic_name,

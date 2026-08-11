@@ -537,3 +537,170 @@ SPECS = [
          cases=[(([[1, 0, 0], [-1, 0, 3]], [[7, 0, 0], [0, 0, 0], [0, 0, 1]]),
                  [[7, 0, 0], [-7, 0, 3]])]),
 ]
+
+
+# ---------------------------------------------------------- added coverage
+
+def _ref_employee_free_time(schedules):
+    """Gaps in the union of every busy interval."""
+    busy = sorted([list(iv) for sched in schedules for iv in sched])
+    if not busy:
+        return []
+    merged = [busy[0][:]]
+    for start, end in busy[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return [[a[1], b[0]] for a, b in zip(merged, merged[1:]) if a[1] < b[0]]
+
+
+def g_schedules(rng):
+    schedules = []
+    for _ in range(rng.randint(1, 4)):
+        sched, t = [], rng.randint(0, 5)
+        for _ in range(rng.randint(0, 3)):
+            start = t + rng.randint(1, 5)
+            end = start + rng.randint(1, 5)
+            sched.append([start, end])
+            t = end
+        if sched:
+            schedules.append(sched)
+    return (schedules or [[[0, 1]]],)
+
+
+def _ref_assign_rooms(intervals):
+    """
+    Lowest-numbered free room, meetings taken in start order.
+
+    Inputs are generated already sorted by start time so that "aligned with the
+    input" and "aligned with start order" are the same thing -- the exercise
+    does not say which, and this removes the ambiguity instead of guessing.
+    """
+    import heapq
+    order = list(intervals)
+    busy = []            # (end_time, room)
+    free = []            # room ids
+    next_room = 0
+    out = []
+    for start, end in order:
+        while busy and busy[0][0] <= start:
+            _, room = heapq.heappop(busy)
+            heapq.heappush(free, room)
+        if free:
+            room = heapq.heappop(free)
+        else:
+            room = next_room
+            next_room += 1
+        heapq.heappush(busy, (end, room))
+        out.append(room)
+    return out
+
+
+def g_sorted_meetings(rng):
+    n = rng.randint(0, 8)
+    starts = sorted(rng.randint(0, 20) for _ in range(n))
+    return ([(s, s + rng.randint(1, 6)) for s in starts],)
+
+
+def _ref_exist(board, word):
+    rows, cols = len(board), len(board[0]) if board else 0
+
+    def walk(r, c, i, seen):
+        if i == len(word):
+            return True
+        if not (0 <= r < rows and 0 <= c < cols):
+            return False
+        if (r, c) in seen or board[r][c] != word[i]:
+            return False
+        seen.add((r, c))
+        found = any(walk(r + dr, c + dc, i + 1, seen)
+                    for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+        seen.discard((r, c))
+        return found
+
+    if not word:
+        return True
+    return any(walk(r, c, 0, set())
+               for r in range(rows) for c in range(cols))
+
+
+def g_exist(rng):
+    rows, cols = rng.randint(1, 4), rng.randint(1, 4)
+    board = [[rng.choice("ab") for _ in range(cols)] for _ in range(rows)]
+    word = "".join(rng.choice("ab") for _ in range(rng.randint(1, 5)))
+    return (board, word)
+
+
+def _ref_spiral_walk(rows, cols, r0, c0):
+    """
+    Growing step lengths 1,1,2,2,3,3,... skipping cells outside the grid.
+
+    Stops once rows*cols in-bounds cells have been collected.
+    """
+    out = [[r0, c0]]
+    if rows * cols == 1:
+        return out
+    r, c = r0, c0
+    directions = ((0, 1), (1, 0), (0, -1), (-1, 0))
+    step = 1
+    d = 0
+    while len(out) < rows * cols:
+        for _ in range(2):
+            dr, dc = directions[d % 4]
+            for _ in range(step):
+                r, c = r + dr, c + dc
+                if 0 <= r < rows and 0 <= c < cols:
+                    out.append([r, c])
+                    if len(out) == rows * cols:
+                        return out
+            d += 1
+        step += 1
+    return out
+
+
+def g_spiral(rng):
+    rows, cols = rng.randint(1, 5), rng.randint(1, 5)
+    return (rows, cols, rng.randrange(rows), rng.randrange(cols))
+
+
+def _as_pairs(x):
+    """Accept lists or tuples for the cells -- only the order is meaningful."""
+    if x is None:
+        return None
+    return [tuple(cell) for cell in x]
+
+
+SPECS += [
+    spec(8, "employee_free_time", ref=_ref_employee_free_time,
+         gen=g_schedules, norm=_as_pairs,
+         cases=[((([[[1, 2], [5, 6]], [[1, 3]], [[4, 10]]]),), [[3, 4]]),
+                ((([[[1, 3], [6, 7]], [[2, 4]], [[2, 5], [9, 12]]]),),
+                 [[5, 6], [7, 9]])],
+         note="the gaps between busy periods across ALL schedules; touching "
+              "intervals leave no gap"),
+
+    spec(9, "assign_rooms", ref=_ref_assign_rooms, gen=g_sorted_meetings,
+         cases=[(([(0, 10), (1, 5), (2, 7), (3, 4)],), [0, 1, 2, 3]),
+                (([(0, 2), (3, 5), (6, 8)],), [0, 0, 0]),
+                (([],), [])],
+         note="rooms are numbered from 0; a meeting takes the lowest-numbered "
+              "free room, and a room is free the instant its meeting ends. "
+              "Inputs are sorted by start time and the answer is aligned with "
+              "them"),
+
+    spec(23, "exist", ref=_ref_exist, gen=g_exist,
+         cases=[((([["A", "B", "C", "E"], ["S", "F", "C", "S"],
+                    ["A", "D", "E", "E"]]), "ABCCED"), True),
+                ((([["A", "B"], ["C", "D"]]), "ABDC"), True),
+                ((([["A", "B"], ["C", "D"]]), "ABCD"), False)],
+         note="4-directional moves, and a cell may not be reused within one "
+              "word"),
+
+    spec(25, "spiral_walk", ref=_ref_spiral_walk, gen=g_spiral,
+         norm=_as_pairs,
+         cases=[((1, 4, 0, 0), [[0, 0], [0, 1], [0, 2], [0, 3]]),
+                ((1, 1, 0, 0), [[0, 0]])],
+         note="step lengths grow 1,1,2,2,3,3,... and the walk may leave the "
+              "grid -- skip those cells and stop after rows*cols of them"),
+]

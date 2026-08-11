@@ -95,6 +95,45 @@ def g_closest(rng):
     return (arr, rng.randint(1, n), rng.randint(-35, 35))
 
 
+_FIRST_BAD = [1]        # the threshold the current trial was built with
+
+
+def b_first_bad(module, rng):
+    """
+    Supplies the `is_bad_version` oracle the problem assumes exists.
+
+    LeetCode hands this problem a given API; this exercise file never defines
+    one, so without injecting it the problem is unsolvable as written. The
+    threshold is also parked in `_FIRST_BAD` so the reference can read it --
+    looking the module up in `sys.modules` worked under check.py but not in the
+    web platform, where a submission is a namespace dict and not a module.
+    """
+    n = rng.randint(1, 200)
+    first_bad = rng.randint(1, n)
+    _FIRST_BAD[0] = first_bad
+    module.is_bad_version = lambda v: v >= first_bad
+    return (n,)
+
+
+def _ref_first_bad(n):
+    """The first bad version is the threshold, by construction."""
+    return _FIRST_BAD[0]
+
+
+def g_mountain(rng):
+    """A strict mountain: up then down, with a single unambiguous peak."""
+    up = rng.randint(1, 6)
+    down = rng.randint(1, 6)
+    peak = rng.randint(50, 100)
+    left = sorted(rng.sample(range(0, 50), up))
+    right = sorted(rng.sample(range(0, 50), down), reverse=True)
+    return (left + [peak] + right,)
+
+
+def _ref_peak_index(arr):
+    return arr.index(max(arr))
+
+
 SPECS = [
     spec(1, "binary_search", ref=_binary_search, gen=g_sorted_unique_target,
          cases=[(([-1, 0, 3, 5, 9, 12], 9), 4),
@@ -136,4 +175,15 @@ SPECS = [
     spec(12, "find_closest_elements", ref=_closest_elements, gen=g_closest,
          cases=[(([1, 2, 3, 4, 5], 4, 3), [1, 2, 3, 4]),
                 (([1, 2, 3, 4, 5], 4, -1), [1, 2, 3, 4])]),
+
+    spec(3, "first_bad_version", ref=_ref_first_bad, build=b_first_bad,
+         trials=60,
+         note="the tests give you `is_bad_version(v)` as a module-level "
+              "function -- call it, do not implement it. Versions are 1..n "
+              "and the answer is the first v where it returns True"),
+
+    spec(11, "peak_index", ref=_ref_peak_index, gen=g_mountain,
+         cases=[(([0, 2, 5, 3, 1],), 2), (([1, 2],), 1), (([2, 1],), 0)],
+         note="the array strictly increases then strictly decreases, so the "
+              "peak is unique"),
 ]

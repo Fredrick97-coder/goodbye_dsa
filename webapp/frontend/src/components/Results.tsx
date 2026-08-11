@@ -181,9 +181,10 @@ export function Results({
 
         {report.untested && (
           <p className="rounded-xl border border-sky-500/20 bg-sky-500/[.07] px-4 py-3 text-[12px] leading-relaxed text-sky-300">
-            This problem has no reference tests yet, so nothing was graded — your
-            code simply ran. Two topics (Queues, Advanced Trees) are still
-            uncovered; check those by hand.
+            This problem has no reference tests, so nothing was graded — your
+            code simply ran. Two of the 342 problems are discussion prompts with
+            no single right answer (complexity analysis, and LRU cache, which
+            states no interface); check those by hand.
           </p>
         )}
 

@@ -6,9 +6,10 @@ editor into a platform: solved-state, submission history and streaks all come
 from real rows rather than the browser's localStorage, so they survive a cache
 clear and can be queried across problems.
 
-Every table carries a `user_id`. There is exactly one user today -- the constant
-`LOCAL_USER` -- but having the column from the start means adding accounts later
-is a change to how `user_id` is resolved, not a migration of every table.
+Every user-scoped table carries a `user_id` referring to a row in `users`, and
+every function here takes that id explicitly. Nothing defaults to a current
+user: a query that silently fell back to some ambient default would be one
+refactor away from showing one account's progress to another.
 """
 
 from __future__ import annotations
@@ -21,9 +22,34 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "forge.db"
-LOCAL_USER = "local"
+# Kept only so a database written before accounts existed still opens; no
+# session can ever resolve to it, because it is not a row in `users`.
+LEGACY_USER = "local"
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT    PRIMARY KEY,
+    email         TEXT    NOT NULL,
+    name          TEXT    NOT NULL,
+    password_hash TEXT    NOT NULL,
+    created_at    REAL    NOT NULL,
+    last_login_at REAL
+);
+-- Emails are stored lowercased; the unique index is what actually prevents two
+-- accounts differing only by case, rather than trusting every call site.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users (email);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT    PRIMARY KEY,
+    user_id    TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at REAL    NOT NULL,
+    touched_at REAL    NOT NULL,
+    expires_at REAL    NOT NULL,
+    user_agent TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_sessions_user ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS ix_sessions_expiry ON sessions (expires_at);
+
 CREATE TABLE IF NOT EXISTS submissions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     TEXT    NOT NULL DEFAULT 'local',
@@ -85,6 +111,118 @@ def init() -> None:
         conn.executescript(_SCHEMA)
 
 
+# ------------------------------------------------------------------- users
+
+class EmailTaken(Exception):
+    """Raised instead of leaking a raw sqlite3.IntegrityError to the route."""
+
+
+def create_user(user_id: str, email: str, name: str,
+                password_hash: str) -> Dict[str, Any]:
+    now = time.time()
+    with _conn() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO users (id, email, name, password_hash, created_at)"
+                " VALUES (?,?,?,?,?)",
+                (user_id, email, name, password_hash, now))
+        except sqlite3.IntegrityError as exc:
+            raise EmailTaken(email) from exc
+    return {"id": user_id, "email": email, "name": name, "created_at": now,
+            "password_hash": password_hash, "last_login_at": None}
+
+
+def user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE email = ?",
+                           (email,)).fetchone()
+    return dict(row) if row else None
+
+
+def user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?",
+                           (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def set_password(user_id: str, password_hash: str) -> None:
+    with _conn() as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                     (password_hash, user_id))
+
+
+def set_name(user_id: str, name: str) -> None:
+    with _conn() as conn:
+        conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
+
+
+def mark_login(user_id: str) -> None:
+    with _conn() as conn:
+        conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?",
+                     (time.time(), user_id))
+
+
+def user_count() -> int:
+    with _conn() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+
+
+# ---------------------------------------------------------------- sessions
+
+def create_session(token_hash: str, user_id: str, ttl_seconds: int,
+                   user_agent: str = "") -> None:
+    now = time.time()
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO sessions (token_hash, user_id, created_at,"
+            " touched_at, expires_at, user_agent) VALUES (?,?,?,?,?,?)",
+            (token_hash, user_id, now, now, now + ttl_seconds, user_agent))
+        # Opportunistic cleanup: expired rows are dead weight and this is the
+        # one moment we are already holding a write connection.
+        conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
+
+
+def session_user(token_hash: str) -> Optional[Dict[str, Any]]:
+    """The user for a live session, with the session's touched_at attached."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT u.*, s.touched_at AS session_touched "
+            "FROM sessions s JOIN users u ON u.id = s.user_id "
+            "WHERE s.token_hash = ? AND s.expires_at > ?",
+            (token_hash, time.time())).fetchone()
+    return dict(row) if row else None
+
+
+def touch_session(token_hash: str, ttl_seconds: int) -> None:
+    now = time.time()
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE sessions SET touched_at = ?, expires_at = ? "
+            "WHERE token_hash = ?", (now, now + ttl_seconds, token_hash))
+
+
+def delete_session(token_hash: str) -> None:
+    with _conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+
+def delete_user_sessions(user_id: str, keep_token_hash: str = "") -> int:
+    """Sign out everywhere. Used on password change, which must invalidate."""
+    with _conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
+            (user_id, keep_token_hash))
+        return cur.rowcount
+
+
+def session_count(user_id: str) -> int:
+    with _conn() as conn:
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM sessions WHERE user_id = ? AND expires_at > ?",
+            (user_id, time.time())).fetchone()[0])
+
+
 # --------------------------------------------------------------- submissions
 
 # Only these verdicts represent a real attempt worth keeping. A `stub` means
@@ -93,9 +231,9 @@ def init() -> None:
 KEEP_VERDICTS = {"accepted", "failed", "error", "missing"}
 
 
-def record_submission(problem_id: str, language: str, source: str,
-                      summary: Dict[str, Any], elapsed_ms: float,
-                      user: str = LOCAL_USER) -> Optional[int]:
+def record_submission(user: str, problem_id: str, language: str, source: str,
+                      summary: Dict[str, Any],
+                      elapsed_ms: float) -> Optional[int]:
     """Store one graded attempt. Returns the row id, or None if not kept."""
     verdict = summary.get("verdict", "")
     if verdict not in KEEP_VERDICTS:
@@ -128,8 +266,8 @@ def _row_to_submission(row: sqlite3.Row, with_source: bool) -> Dict[str, Any]:
     return out
 
 
-def submissions(problem_id: Optional[str] = None, limit: int = 50,
-                user: str = LOCAL_USER) -> List[Dict[str, Any]]:
+def submissions(user: str, problem_id: Optional[str] = None,
+                limit: int = 50) -> List[Dict[str, Any]]:
     sql = "SELECT * FROM submissions WHERE user_id = ?"
     args: List[Any] = [user]
     if problem_id:
@@ -145,7 +283,7 @@ def submissions(problem_id: Optional[str] = None, limit: int = 50,
     return [_row_to_submission(r, with_source=False) for r in rows]
 
 
-def submission(sub_id: int, user: str = LOCAL_USER) -> Optional[Dict[str, Any]]:
+def submission(sub_id: int, user: str) -> Optional[Dict[str, Any]]:
     with _conn() as conn:
         row = conn.execute(
             "SELECT * FROM submissions WHERE id = ? AND user_id = ?",
@@ -153,7 +291,7 @@ def submission(sub_id: int, user: str = LOCAL_USER) -> Optional[Dict[str, Any]]:
     return _row_to_submission(row, with_source=True) if row else None
 
 
-def statuses(user: str = LOCAL_USER) -> Dict[str, str]:
+def statuses(user: str) -> Dict[str, str]:
     """
     problem_id -> "solved" | "attempted".
 
@@ -170,7 +308,7 @@ def statuses(user: str = LOCAL_USER) -> Dict[str, str]:
             for r in rows}
 
 
-def attempt_counts(user: str = LOCAL_USER) -> Dict[str, int]:
+def attempt_counts(user: str) -> Dict[str, int]:
     with _conn() as conn:
         rows = conn.execute(
             "SELECT problem_id, COUNT(*) AS n FROM submissions "
@@ -180,7 +318,7 @@ def attempt_counts(user: str = LOCAL_USER) -> Dict[str, int]:
 
 # ------------------------------------------------------------------ activity
 
-def activity(days: int = 365, user: str = LOCAL_USER) -> Dict[str, Any]:
+def activity(user: str, days: int = 365) -> Dict[str, Any]:
     """
     Per-day submission and solve counts for the contribution heatmap.
 
@@ -248,7 +386,7 @@ def _longest_streak(active: set) -> int:
 
 # ----------------------------------------------------------------- bookmarks
 
-def bookmarks(user: str = LOCAL_USER) -> List[str]:
+def bookmarks(user: str) -> List[str]:
     with _conn() as conn:
         rows = conn.execute(
             "SELECT problem_id FROM bookmarks WHERE user_id = ? "
@@ -256,7 +394,7 @@ def bookmarks(user: str = LOCAL_USER) -> List[str]:
     return [r["problem_id"] for r in rows]
 
 
-def toggle_bookmark(problem_id: str, user: str = LOCAL_USER) -> bool:
+def toggle_bookmark(problem_id: str, user: str) -> bool:
     """Returns the new state: True if now bookmarked."""
     with _conn() as conn:
         existing = conn.execute(
@@ -275,7 +413,7 @@ def toggle_bookmark(problem_id: str, user: str = LOCAL_USER) -> bool:
 
 # --------------------------------------------------------------------- notes
 
-def note(problem_id: str, user: str = LOCAL_USER) -> Dict[str, Any]:
+def note(problem_id: str, user: str) -> Dict[str, Any]:
     with _conn() as conn:
         row = conn.execute(
             "SELECT body, updated_at FROM notes "
@@ -287,7 +425,7 @@ def note(problem_id: str, user: str = LOCAL_USER) -> Dict[str, Any]:
             "updatedAt": row["updated_at"]}
 
 
-def save_note(problem_id: str, body: str, user: str = LOCAL_USER) -> Dict[str, Any]:
+def save_note(problem_id: str, body: str, user: str) -> Dict[str, Any]:
     now = time.time()
     with _conn() as conn:
         if body.strip():
@@ -307,7 +445,7 @@ def save_note(problem_id: str, body: str, user: str = LOCAL_USER) -> Dict[str, A
     return {"problemId": problem_id, "body": body, "updatedAt": now}
 
 
-def noted_problems(user: str = LOCAL_USER) -> List[str]:
+def noted_problems(user: str) -> List[str]:
     with _conn() as conn:
         rows = conn.execute(
             "SELECT problem_id FROM notes WHERE user_id = ?", (user,)).fetchall()

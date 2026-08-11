@@ -341,3 +341,221 @@ SPECS = [
          prop=lambda x: None if x is None else len(x),
          cases=[((n,), _catalan(n)) for n in range(1, 8)]),
 ]
+
+
+# ---------------------------------------------------------- added coverage
+
+def _ref_find_words(board, words):
+    """Brute force per word, which is exactly what the problem improves on."""
+    rows, cols = len(board), len(board[0]) if board else 0
+
+    def search(word):
+        def walk(r, c, i, seen):
+            if i == len(word):
+                return True
+            if not (0 <= r < rows and 0 <= c < cols):
+                return False
+            if (r, c) in seen or board[r][c] != word[i]:
+                return False
+            seen.add((r, c))
+            found = any(walk(r + dr, c + dc, i + 1, seen)
+                        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+            seen.discard((r, c))
+            return found
+        return any(walk(r, c, 0, set())
+                   for r in range(rows) for c in range(cols))
+
+    return [w for w in words if w and search(w)]
+
+
+def g_word_board(rng):
+    rows, cols = rng.randint(1, 4), rng.randint(1, 4)
+    board = [[rng.choice("abc") for _ in range(cols)] for _ in range(rows)]
+    words = ["".join(rng.choice("abc") for _ in range(rng.randint(1, 4)))
+             for _ in range(rng.randint(1, 5))]
+    return (board, sorted(set(words)))
+
+
+def _ref_add_operators(num, target):
+    out = []
+
+    def walk(i, expr, value, prev):
+        if i == len(num):
+            if value == target:
+                out.append(expr)
+            return
+        for j in range(i + 1, len(num) + 1):
+            part = num[i:j]
+            if len(part) > 1 and part[0] == "0":
+                break                       # no leading zeros
+            n = int(part)
+            if i == 0:
+                walk(j, part, n, n)
+            else:
+                walk(j, expr + "+" + part, value + n, n)
+                walk(j, expr + "-" + part, value - n, -n)
+                walk(j, expr + "*" + part, value - prev + prev * n, prev * n)
+
+    if num:
+        walk(0, "", 0, 0)
+    return out
+
+
+def g_add_ops(rng):
+    num = "".join(rng.choice("0123") for _ in range(rng.randint(1, 5)))
+    return (num, rng.randint(-6, 12))
+
+
+def _valid_tour(tour):
+    """
+    Any knight's tour is acceptable, so validate rather than compare.
+
+    The board size is recovered from the tour itself: a full tour visits every
+    cell exactly once, so its length is n*n.
+    """
+    if tour is None:
+        return None
+    cells = [tuple(c) for c in tour]
+    n2 = len(cells)
+    n = int(round(n2 ** 0.5))
+    if n * n != n2 or len(set(cells)) != n2:
+        return False
+    if any(not (0 <= r < n and 0 <= c < n) for r, c in cells):
+        return False
+    moves = {(1, 2), (2, 1), (-1, 2), (-2, 1),
+             (1, -2), (2, -1), (-1, -2), (-2, -1)}
+    return all((b[0] - a[0], b[1] - a[1]) in moves
+               for a, b in zip(cells, cells[1:]))
+
+
+def _canonical_colouring(colours):
+    """
+    Relabel colours by first appearance.
+
+    Which colour gets which number is arbitrary, so [0,1,0] and [2,7,2] are the
+    same answer. The cases below are chosen so the PARTITION is unique, which
+    makes this canonical form comparable.
+    """
+    if colours is None:
+        return None
+    mapping = {}
+    out = []
+    for c in colours:
+        if c not in mapping:
+            mapping[c] = len(mapping)
+        out.append(mapping[c])
+    return out
+
+
+def _ref_knapsack(weights, values, capacity):
+    """The Topic 12 DP, used as the reference for the branch-and-bound version."""
+    best = [0] * (capacity + 1)
+    for w, v in zip(weights, values):
+        for c in range(capacity, w - 1, -1):
+            best[c] = max(best[c], best[c - w] + v)
+    return best[capacity]
+
+
+def g_knapsack(rng):
+    n = rng.randint(0, 8)
+    weights = [rng.randint(1, 10) for _ in range(n)]
+    values = [rng.randint(1, 20) for _ in range(n)]
+    return (weights, values, rng.randint(0, 20))
+
+
+SPECS += [
+    spec(18, "find_words", ref=_ref_find_words, gen=g_word_board,
+         norm=as_sorted,
+         cases=[((([["o", "a", "a", "n"], ["e", "t", "a", "e"],
+                    ["i", "h", "k", "r"], ["i", "f", "l", "v"]]),
+                  ["oath", "pea", "eat", "rain"]), ["oath", "eat"])],
+         note="order does not matter; each word may reuse a cell only once "
+              "within that word"),
+
+    spec(20, "add_operators", ref=_ref_add_operators, gen=g_add_ops,
+         norm=as_sorted,
+         cases=[(("123", 6), ["1*2*3", "1+2+3"]),
+                (("232", 8), ["2*3+2", "2+3*2"]),
+                (("105", 5), ["1*0+5", "10-5"]),
+                (("00", 0), ["0*0", "0+0", "0-0"])],
+         note="insert +, - or * between digits with no spaces; multi-digit "
+              "numbers may not have a leading zero. Order does not matter"),
+
+    spec(21, "knights_tour", prop=_valid_tour,
+         cases=[((1,), True), ((5,), True), ((3,), None), ((4,), None)],
+         note="ANY valid tour is accepted -- the check is that every square is "
+              "visited exactly once by legal knight moves. Return None when no "
+              "tour exists (3x3 and 4x4 have none)"),
+
+    spec(25, "knapsack_branch_and_bound", ref=_ref_knapsack, gen=g_knapsack,
+         cases=[(([1, 3, 4, 5], [1, 4, 5, 7], 7), 9),
+                (([], [], 10), 0)],
+         note="returns the optimal VALUE; branch and bound must reach the "
+              "same answer as the DP, just by exploring fewer nodes"),
+]
+
+# One spec per graph, so the property check can see its own input -- the same
+# idiom the topological-sort specs use.
+_COLOUR_CASES = [
+    ([[0, 1, 1], [1, 0, 1], [1, 1, 0]], 3, [0, 1, 2]),      # K3, 3 colours
+    ([[0, 1, 1], [1, 0, 1], [1, 1, 0]], 2, None),           # K3, impossible
+    ([[0, 1, 0, 0], [1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0]], 2,
+     [0, 1, 0, 1]),                                         # path, 2 colours
+    ([[0, 0], [0, 0]], 1, [0, 0]),                          # no edges
+]
+
+SPECS += [
+    spec(22, "graph_colouring", norm=_canonical_colouring,
+         cases=[((_graph, _m), _expected)],
+         note="colour numbering is arbitrary, so the answer is compared after "
+              "relabelling by first appearance. Return None when the graph is "
+              "not m-colourable")
+    for _graph, _m, _expected in _COLOUR_CASES
+]
+
+
+def _cryptarithm_ok(words, result):
+    """
+    Validate a returned letter->digit mapping against the puzzle.
+
+    Closing over the puzzle is the only way to check this: the mapping alone
+    says nothing about whether the sum works out.
+    """
+    def check(mapping):
+        if mapping is None:
+            return False
+        letters = {ch for w in words + [result] for ch in w}
+        if set(mapping) != letters:
+            return False
+        digits = [mapping[ch] for ch in letters]
+        if len(set(digits)) != len(digits) or any(d < 0 or d > 9 for d in digits):
+            return False
+        if any(mapping[w[0]] == 0 for w in words + [result] if len(w) > 1):
+            return False
+
+        def value(word):
+            return int("".join(str(mapping[ch]) for ch in word))
+
+        return sum(value(w) for w in words) == value(result)
+    return check
+
+
+_CRYPT_CASES = [
+    (["SEND", "MORE"], "MONEY", True),
+    (["TO", "GO"], "OUT", True),
+    # A + A = B is solvable (1 + 1 = 2); A = B is NOT, because the letters must
+    # take distinct digits. An earlier version expected the latter to succeed.
+    (["A", "A"], "B", True),
+    (["AB", "AB"], "AAA", None),        # unsatisfiable
+]
+
+SPECS += [
+    spec(23, "solve_cryptarithm",
+         prop=(lambda w, r: lambda m: _cryptarithm_ok(w, r)(m)
+               if m is not None else None)(_words, _result),
+         cases=[((_words, _result), _expected)],
+         note="return a letter -> digit dict, or None when unsolvable. Any "
+              "valid assignment is accepted: distinct digits, and no leading "
+              "zero on a multi-letter word")
+    for _words, _result, _expected in _CRYPT_CASES
+]

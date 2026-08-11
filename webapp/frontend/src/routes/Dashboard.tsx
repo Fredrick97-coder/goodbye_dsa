@@ -4,9 +4,11 @@ import { Heatmap } from "../components/Heatmap";
 import {
   Bar, DifficultyText, Empty, Icon, Ring, Spinner, StackedBar, StatCard, VerdictPill,
 } from "../components/ui";
+import { SignInPanel } from "../components/SignInPanel";
 import { api } from "../lib/api";
 import { useAppData } from "../lib/app-data";
-import { DIFF_BG, pct, timeAgo } from "../lib/format";
+import { useAuth } from "../lib/auth";
+import { DIFF_BG, pct, pctLabel, timeAgo } from "../lib/format";
 import type { Overview, TopicProgress } from "../lib/types";
 
 const LEVEL_ORDER = ["Beginner", "Intermediate", "Advanced", "Interview Prep"];
@@ -64,15 +66,50 @@ function TrackCard({ t }: { t: TopicProgress }) {
 
 export default function Dashboard() {
   const { meta, problems } = useAppData();
+  const { user } = useAuth();
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) { setData(null); setError(null); return; }
+    // Aborted on cleanup, so logging out cancels the request rather than
+    // letting it return 401 into a component that no longer wants it.
+    const ac = new AbortController();
     void (async () => {
-      try { setData(await api.overview()); }
-      catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+      try { setData(await api.overview(ac.signal)); setError(null); }
+      catch (err) {
+        if (ac.signal.aborted) return;
+        setError(err instanceof Error ? err.message : String(err));
+      }
     })();
-  }, [problems]);   // re-pull after a submit patches the list
+    return () => ac.abort();
+  }, [problems, user]);   // re-pull after a submit patches the list
+
+  // Signed out there is no progress to show, so pitch the account instead of
+  // rendering a dashboard full of zeroes.
+  if (!user)
+    return (
+      <div className="scroll-thin h-full overflow-y-auto px-5 py-6">
+        <SignInPanel
+          title="Track your progress"
+          blurb={meta
+            ? `${meta.stats.problems} problems across ${meta.topics.length} topics, ${meta.stats.tested} of them auto-graded. An account remembers which ones you have solved.`
+            : "An account remembers which problems you have solved."}
+          bullets={[
+            "Solved and attempted state, per problem",
+            "Every graded submission kept with the code you wrote",
+            "Streaks, an activity heatmap, and per-topic progress",
+            "Bookmarks and per-problem notes",
+          ]}
+        />
+        <div className="mx-auto mt-4 max-w-lg text-center">
+          <Link to="/problems" className="btn-ghost text-[12.5px]">
+            Or browse all {meta?.stats.problems ?? ""} problems first
+            <Icon name="arrowRight" className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </div>
+    );
 
   if (error)
     return <Empty icon="x" title="Could not load progress" hint={error} />;
@@ -132,7 +169,7 @@ export default function Dashboard() {
                       sub={`${totals.attempted} problems in progress`} />
             <StatCard icon="trophy" label="Solved" tone="text-mint-400"
                       value={totals.solved}
-                      sub={`${pct(totals.solved, totals.problems)}% of the curriculum`} />
+                      sub={`${pctLabel(totals.solved, totals.problems)} of the curriculum`} />
             <StatCard icon="doc" label="Untouched" tone="text-mist-400"
                       value={untouched} sub="not started yet" />
           </div>

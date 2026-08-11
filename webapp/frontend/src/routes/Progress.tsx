@@ -4,30 +4,53 @@ import { Heatmap } from "../components/Heatmap";
 import {
   Bar, DifficultyText, Empty, Icon, Ring, Spinner, StatCard, VerdictPill,
 } from "../components/ui";
+import { SignInPanel } from "../components/SignInPanel";
 import { api } from "../lib/api";
 import { useAppData } from "../lib/app-data";
-import { DIFF_BG, pct, timestamp } from "../lib/format";
+import { useAuth } from "../lib/auth";
+import { DIFF_BG, pct, pctLabel, timestamp } from "../lib/format";
 import type { Overview, Submission } from "../lib/types";
 
 export default function Progress() {
   const { byId } = useAppData();
+  const { user } = useAuth();
   const [data, setData] = useState<Overview | null>(null);
   const [history, setHistory] = useState<Submission[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) { setData(null); return; }
+    const ac = new AbortController();
     void (async () => {
       try {
         const [overview, subs] = await Promise.all([
-          api.overview(), api.submissions(undefined, 200),
+          api.overview(ac.signal), api.submissions(undefined, 200, ac.signal),
         ]);
         setData(overview);
         setHistory(subs);
       } catch (err) {
+        if (ac.signal.aborted) return;
         setError(err instanceof Error ? err.message : String(err));
       }
     })();
-  }, []);
+    return () => ac.abort();
+  }, [user]);
+
+  if (!user)
+    return (
+      <div className="scroll-thin h-full overflow-y-auto px-5 py-6">
+        <SignInPanel
+          title="Your progress lives in your account"
+          blurb="Streaks, the activity heatmap and your full submission history are built from real graded submissions, so they need somewhere to live."
+          bullets={[
+            "A 12-month activity heatmap",
+            "Current and longest streak",
+            "Progress by difficulty and by topic",
+            "Every submission, with its verdict and your code",
+          ]}
+        />
+      </div>
+    );
 
   if (error) return <Empty icon="x" title="Could not load progress" hint={error} />;
   if (!data)
@@ -51,7 +74,7 @@ export default function Progress() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard icon="trophy" label="Solved" tone="text-mint-400"
                     value={`${totals.solved}`}
-                    sub={`${pct(totals.solved, totals.problems)}% of ${totals.problems}`} />
+                    sub={`${pctLabel(totals.solved, totals.problems)} of ${totals.problems}`} />
           <StatCard icon="history" label="Submissions" tone="text-sky-400"
                     value={activity.totalSubmissions}
                     sub={history.length ? `${pct(accepted, history.length)}% accepted (last ${history.length})` : "none yet"} />

@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAppData } from "../lib/app-data";
+import { useAuth } from "../lib/auth";
+import { AccountMenu } from "./AccountMenu";
+import { AuthModal } from "./AuthModal";
 import { Icon, Spinner } from "./ui";
 
 const NAV = [
@@ -30,6 +33,7 @@ function ApiDown({ message }: { message: string }) {
 
 export function Shell() {
   const { meta, problems, loading, error } = useAppData();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [picking, setPicking] = useState(false);
 
@@ -45,7 +49,9 @@ export function Shell() {
   };
 
   if (error) return <ApiDown message={error} />;
-  if (loading || !meta) {
+  // Waiting for /auth/me too, so the navbar never flashes "Log in" for someone
+  // who is already signed in.
+  if (loading || authLoading || !meta) {
     return (
       <div className="grid h-full place-items-center">
         <Spinner className="h-6 w-6 text-volt-400" />
@@ -85,23 +91,30 @@ export function Shell() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <div className="mr-1 hidden items-center gap-1.5 md:flex">
-            <Icon name="trophy" className="h-3.5 w-3.5 text-mint-400" />
-            <span className="font-mono text-[12px] text-mist-300">
-              {solved}<span className="text-mist-400">/{meta.stats.problems}</span>
-            </span>
-          </div>
+          {user && (
+            <div className="mr-1 hidden items-center gap-1.5 md:flex">
+              <Icon name="trophy" className="h-3.5 w-3.5 text-mint-400" />
+              <span className="font-mono text-[12px] text-mist-300">
+                {solved}<span className="text-mist-400">/{meta.stats.problems}</span>
+              </span>
+            </div>
+          )}
           <button onClick={() => void pickRandom()} className="btn-outline !py-1.5"
                   title="Jump to a random unsolved problem">
             {picking ? <Spinner /> : <Icon name="dice" className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline">Random</span>
           </button>
+          <div className="ml-1 h-6 w-px bg-white/[.08]" />
+          <AccountMenu />
         </div>
       </header>
 
       <main className="min-h-0 flex-1">
         <Outlet />
       </main>
+
+      {/* One modal for the whole app, so any page can call requireAuth. */}
+      <AuthModal />
     </div>
   );
 }

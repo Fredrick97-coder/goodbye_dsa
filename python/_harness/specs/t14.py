@@ -291,6 +291,58 @@ def g_dag(rng):
 
 SAMPLE_G = {0: [(1, 4), (2, 1)], 1: [(3, 1)], 2: [(1, 2), (3, 5)], 3: []}
 
+def _ref_bridges(n, connections):
+    """
+    Brute force: an edge is critical when removing it disconnects the graph.
+
+    O(E * (V + E)) and obviously correct, which is what a reference is for --
+    the learner writes Tarjan's low-link version.
+    """
+    from collections import defaultdict, deque
+    edges = [tuple(e) for e in connections]
+
+    def connected(skip):
+        adj = defaultdict(list)
+        for i, (a, b) in enumerate(edges):
+            if i == skip:
+                continue
+            adj[a].append(b)
+            adj[b].append(a)
+        seen = {0}
+        q = deque([0])
+        while q:
+            node = q.popleft()
+            for nxt in adj[node]:
+                if nxt not in seen:
+                    seen.add(nxt)
+                    q.append(nxt)
+        return len(seen) == n
+
+    if not connected(-1):
+        # A disconnected graph has no single edge whose removal disconnects
+        # something that was joined to begin with.
+        return []
+    return [list(edges[i]) for i in range(len(edges)) if not connected(i)]
+
+
+def g_bridge_graph(rng):
+    """A connected graph: a spanning tree plus a few extra edges."""
+    n = rng.randint(2, 8)
+    edges = [(i, rng.randrange(i)) for i in range(1, n)]
+    for _ in range(rng.randint(0, 3)):
+        a, b = rng.sample(range(n), 2)
+        if (a, b) not in edges and (b, a) not in edges:
+            edges.append((a, b))
+    return (n, edges)
+
+
+def _as_edge_set(x):
+    """Direction and order carry no meaning for an undirected bridge."""
+    if x is None:
+        return None
+    return sorted(tuple(sorted(e)) for e in x)
+
+
 SPECS = [
     spec(1, "dijkstra_shortest_path", ref=_dijkstra, gen=g_dijkstra,
          cases=[((SAMPLE_G, 0), {0: 0, 1: 3, 2: 1, 3: 4})],
@@ -359,4 +411,15 @@ SPECS += [
          cases=[((_g, _n), True)],
          note="ANY valid topological order is accepted")
     for _g, _n in _TOPO
+
+]
+
+
+SPECS += [
+    spec(12, "find_critical_connections", ref=_ref_bridges,
+         gen=g_bridge_graph, norm=_as_edge_set,
+         cases=[((4, [(0, 1), (1, 2), (2, 0), (1, 3)]), [[1, 3]]),
+                ((2, [(0, 1)]), [[0, 1]])],
+         note="undirected, so [a,b] and [b,a] are the same bridge and the "
+              "order of the list does not matter"),
 ]

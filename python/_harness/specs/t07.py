@@ -158,6 +158,23 @@ def c_cycle(module):
             ((_make_cyclic(module, [1], 0),), True)]
 
 
+def _values_from_head(head):
+    """Walk a linked list into a plain list, tolerating a cycle."""
+    out, seen = [], set()
+    node = head
+    while node is not None and id(node) not in seen:
+        seen.add(id(node))
+        out.append(node.data if hasattr(node, "data") else node.val)
+        node = node.next
+    return out
+
+
+def c_create_list(module):
+    return [((([1, 2, 3, 4, 5]),), [1, 2, 3, 4, 5]),
+            (([],), []),
+            (([7],), [7])]
+
+
 SPECS = [
     spec(2, "search_linked_list", ref=_ref_search, build=b_list_target,
          build_cases=c_search),
@@ -189,4 +206,11 @@ SPECS = [
     spec(12, "reorder_list", inplace=True, prop=_to_list, ref=_ref_reorder,
          build=b_list,
          note="in-place: L0, Ln, L1, Ln-1, ..."),
+
+    # The docstring is explicit that this returns the head, so that is what is
+    # graded; whatever it prints on the way is not compared.
+    spec(1, "create_and_print_list", prop=_values_from_head,
+         build_cases=c_create_list,
+         note="build the list from `values` and RETURN the head node; "
+              "printing is not what is graded"),
 ]

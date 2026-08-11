@@ -192,6 +192,21 @@ class _NamespaceView:
                 f"your code does not define {name!r}, which this problem's "
                 f"tests need in order to build inputs") from None
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+        Writes land in the submission's globals.
+
+        Some problems assume a helper exists that the exercise file never
+        defines -- `first_bad_version` is handed an `is_bad_version(v)` oracle
+        the way LeetCode hands you one. The spec injects it by setting an
+        attribute on the module, so that has to reach the namespace the
+        submission actually runs in.
+        """
+        if name == "_ns":
+            object.__setattr__(self, name, value)
+        else:
+            self._ns[name] = value
+
 
 def _resolve(namespace: Dict[str, Any], target: str):
     if "." in target:
@@ -199,6 +214,32 @@ def _resolve(namespace: Dict[str, Any], target: str):
         cls = namespace.get(cls_name)
         return (getattr(cls, attr, None) if cls else None), cls
     return namespace.get(target), None
+
+
+def _mutating(sp) -> bool:
+    """Does an unwritten stub of this problem show up as an untouched input?"""
+    return bool(sp.inplace or getattr(sp, "accept_inplace", False))
+
+
+def _looks_stubbed(sp, got, args) -> bool:
+    """
+    Mirrors runner._unimplemented: did this call leave the input untouched?
+
+    Objects compare by identity, so a mutated-in-place tree node has to be
+    read through the spec's own `prop`/`norm` transform to be comparable at
+    all -- otherwise every unwritten stub reads as a wrong answer.
+    """
+    if got is None:
+        return True
+    if not _mutating(sp):
+        return False
+    comparable = sp.prop or sp.norm
+    if comparable is not None:
+        try:
+            return comparable(got) == comparable(args[0])
+        except Exception:                                   # noqa: BLE001
+            return False
+    return got == args[0]
 
 
 def _grade(sp, namespace, _matches, _ref_value, stubs) -> Dict[str, Any]:
@@ -228,25 +269,58 @@ def _grade(sp, namespace, _matches, _ref_value, stubs) -> Dict[str, Any]:
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 got = sp.script(cls)
-            want = sp.ref_script() if sp.ref_script else None
-            ok = want is None or got == want
-            out["cases"].append({
-                "name": "method sequence", "passed": bool(ok),
-                "input": sp.note or "scripted calls",
-                "expected": _short(want), "got": _short(got), "error": "",
-            })
-            out["total"] = 1
-            out["passed"] = 1 if ok else 0
-            out["status"] = "PASS" if ok else "FAIL"
         except Exception as exc:                            # noqa: BLE001
+            message = str(exc)
+            # Unimplemented methods return None, so the script blows up on the
+            # first thing it does with the result. That is "not attempted", not
+            # a wrong answer -- mirroring runner._run_one.
+            if isinstance(exc, (TypeError, AttributeError)) and (
+                    "NoneType" in message or "not subscriptable" in message
+                    or "argument" in message):
+                out["status"] = "STUB"
+                out["cases"].append({
+                    "name": "method sequence", "passed": False,
+                    "input": sp.note or "scripted calls",
+                    "expected": "", "got": "",
+                    "error": "methods are not implemented yet",
+                })
+            else:
+                out["status"] = "ERROR"
+                out["cases"].append({
+                    "name": "method sequence", "passed": False,
+                    "input": sp.note or "scripted calls",
+                    "expected": "", "got": "",
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+            out["total"] = 1
+            return out
+
+        # A script whose every observed value is None means the methods still
+        # return nothing. Reporting that as Wrong Answer told every learner
+        # opening a class problem that their untouched starter was incorrect.
+        if got is None or (isinstance(got, (list, tuple)) and len(got)
+                           and all(v is None for v in got)):
+            out["status"] = "STUB"
+            out["total"] = 1
             out["cases"].append({
                 "name": "method sequence", "passed": False,
                 "input": sp.note or "scripted calls",
-                "expected": "", "got": "",
-                "error": f"{type(exc).__name__}: {exc}",
+                "expected": _short(sp.ref_script() if sp.ref_script else None),
+                "got": _short(got),
+                "error": "every method returned None -- not implemented yet",
             })
-            out["total"] = 1
-            out["status"] = "ERROR"
+            return out
+
+        want = sp.ref_script() if sp.ref_script else None
+        ok = want is None or got == want
+        out["cases"].append({
+            "name": "method sequence", "passed": bool(ok),
+            "input": sp.note or "scripted calls",
+            "expected": _short(want), "got": _short(got), "error": "",
+        })
+        out["total"] = 1
+        out["passed"] = 1 if ok else 0
+        out["status"] = "PASS" if ok else "FAIL"
         return out
 
     fn, _owner = _resolve(namespace, sp.target)
@@ -267,7 +341,12 @@ def _grade(sp, namespace, _matches, _ref_value, stubs) -> Dict[str, Any]:
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             result = fn(*safe)
-        return (safe[0] if sp.inplace else result)
+        if sp.inplace:
+            return safe[0]
+        # accept_inplace: either contract passes -- see runner._call
+        if getattr(sp, "accept_inplace", False) and result is None:
+            return safe[0]
+        return result
 
     # --- fixed cases ---
     cases = list(sp.cases)
@@ -285,6 +364,7 @@ def _grade(sp, namespace, _matches, _ref_value, stubs) -> Dict[str, Any]:
             return out
 
     stub_like = 0
+    real_progress = 0     # a pass that an empty stub could not have produced
     for idx, (args, want) in enumerate(cases, 1):
         entry = {
             "name": f"case {idx}",
@@ -305,7 +385,9 @@ def _grade(sp, namespace, _matches, _ref_value, stubs) -> Dict[str, Any]:
         if _matches(got, want, sp):
             entry["passed"] = True
             out["passed"] += 1
-        elif got is None or (sp.inplace and got == args[0]):
+            if not _looks_stubbed(sp, got, args):
+                real_progress += 1
+        elif _looks_stubbed(sp, got, args):
             stub_like += 1
         out["total"] += 1
         out["cases"].append(entry)
@@ -352,8 +434,10 @@ def _grade(sp, namespace, _matches, _ref_value, stubs) -> Dict[str, Any]:
             out["total"] += 1
             if _matches(got, want, sp):
                 out["passed"] += 1
+                if not _looks_stubbed(sp, got, args):
+                    real_progress += 1
             else:
-                if got is None or (sp.inplace and got == args[0]):
+                if _looks_stubbed(sp, got, args):
                     stub_like += 1
                 if failures_shown < 3:
                     failures_shown += 1
@@ -368,7 +452,11 @@ def _grade(sp, namespace, _matches, _ref_value, stubs) -> Dict[str, Any]:
     # --- verdict ---
     if out["status"] != "ERROR":
         if out["passed"] == out["total"] and out["total"] > 0:
-            out["status"] = "PASS"
+            # ...unless nothing that passed required an implementation. A spec
+            # whose only expected answer is None is satisfied by untouched
+            # starter code, and calling that Accepted would be a lie.
+            out["status"] = "STUB" if (body_empty and real_progress == 0) \
+                else "PASS"
         elif body_empty and stub_like:
             out["status"] = "STUB"
         else:

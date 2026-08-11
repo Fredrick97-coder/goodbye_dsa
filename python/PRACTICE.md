@@ -125,19 +125,37 @@ part no file in this repo can do for you.
 Run `python check.py --coverage` for the live figure. At the time of writing:
 
 ```
-264 of 342 problems have automated tests (77%)
-20 of 22 topics have specs
+340 of 342 problems have automated tests (99%)
+22 of 22 topics have specs
 ```
 
-**Two topics have no tests yet:**
+**The two exceptions cannot be graded, rather than merely not being graded yet:**
 
-- **05 Queues** — most problems mutate a `Queue` object through a method
-  sequence, which needs per-problem scripting rather than a reference call
-- **17 Advanced Trees** — AVL rotations, segment trees and Fenwick trees need
-  the learner's own node/class objects constructed per problem
+- **01-10 Complexity Analysis** — the function is already written for you; the
+  answer is a paragraph about its complexity, not a return value
+- **09-09 LRU Cache** — the stub takes no arguments and specifies no interface,
+  so there is nothing a test could call
 
-Untested problems still appear in `drill.py`; you just have to check those by
-hand. Nothing is silently reported as passing.
+Both still appear in `drill.py`; you just check them by hand. Nothing is
+silently reported as passing.
+
+Several problems needed a decision before they could be graded at all, and each
+one says so in its own `note`, which `check.py` and the web UI both surface:
+
+- **Either contract accepted** — `reverse_queue` and `rotate_queue` pass whether
+  they return a new queue or rearrange the one they were given (`accept_inplace`)
+- **Graded on properties** — `avl_insert`, `avl_delete` and `merge_avl_trees` are
+  checked on (in-order keys, balanced, cached heights correct), so any correct
+  rotation style passes; `huffman_coding` on code lengths plus prefix-freeness,
+  because Huffman codes are not unique
+- **Any valid answer accepted** — `knights_tour`, `find_order`, `graph_colouring`
+  and `solve_cryptarithm` validate the answer instead of comparing it, using one
+  spec per case so the check can see its own input
+- **Round-tripped** — `serialize`/`deserialize` are graded against each other, so
+  the wire format is entirely your choice
+- **Injected helpers** — `first_bad_version` is handed an `is_bad_version(v)`
+  oracle the way LeetCode hands you one; `fenwick_range_sum` and `autocomplete`
+  are handed working structures so they do not depend on an earlier problem
 
 ---
 

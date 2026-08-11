@@ -51,6 +51,48 @@ LANGUAGES = [
 
 DIFFICULTY_ORDER = {"Easy": 0, "Medium": 1, "Hard": 2, "Challenge": 3}
 
+# Exercise headings are SHOUTED, so they need title-casing for display -- but
+# str.title() turns "AVL INSERT" into "Avl Insert" and "DUPLICATE II" into
+# "Duplicate Ii". These tokens stay upper.
+_KEEP_UPPER = {
+    "AVL", "BST", "BFS", "DFS", "DP", "LRU", "LFU", "KMP", "BWT", "RSA",
+    "LCS", "LIS", "GCD", "LCM", "XOR", "API", "JSON", "SQL", "URL", "ID",
+    "CPU", "RAM", "IO", "LCA", "MST", "RMQ", "BIT", "NP", "FIFO", "LIFO",
+    "II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII", "K",
+}
+
+
+def pretty_title(raw: str) -> str:
+    """Title-case a shouted heading while preserving acronyms and numerals."""
+    letters = [c for c in raw if c.isalpha()]
+    # `raw.isupper()` was too strict: "GRAPH COLOURING (m-COLOURABILITY)" has a
+    # meaningful lowercase 'm' and was left shouting.
+    if not letters or sum(c.isupper() for c in letters) < 0.7 * len(letters):
+        return raw
+
+    def fix(token: str) -> str:
+        # Split on hyphens and slashes so "K-WAY" and "SERIALIZE/DESERIALIZE"
+        # are handled piece by piece.
+        for sep in ("-", "/"):
+            if sep in token:
+                return sep.join(fix(part) for part in token.split(sep))
+        bare = token.strip("().,:;'\"")
+        if bare in _KEEP_UPPER:
+            return token
+        if len(bare) == 1:
+            # A lone letter is notation -- the 'm' of m-colourability, the 'k'
+            # of k-way -- so its case is meaningful.
+            return token
+        # str.capitalize() uppercases the FIRST character, so "(STREAMING)"
+        # came out as "(streaming)". Capitalise the first letter instead.
+        low = token.lower()
+        for i, ch in enumerate(low):
+            if ch.isalpha():
+                return low[:i] + ch.upper() + low[i + 1:]
+        return low
+
+    return " ".join(fix(t) for t in raw.split())
+
 
 # --------------------------------------------------------------------- specs
 
@@ -82,13 +124,73 @@ def _exercise_source(topic: int) -> str:
     return (dirs[topic] / "exercise.py").read_text(encoding="utf-8")
 
 
-def starter_code(topic: int, targets: List[str]) -> str:
+@lru_cache(maxsize=64)
+def _scaffolding(topic: int) -> Any:
+    """
+    The parts of exercise.py a solution needs but does not write itself.
+
+    Two kinds:
+
+    * top-level imports -- without them a signature like
+      `def avl_insert(node: Optional[AVLNode], ...)` raises NameError the
+      moment the file is executed, because annotations are evaluated at
+      definition time.
+    * provided helper classes -- AVLNode, TreeNode and friends, which the
+      exercise files hand the learner complete. A class counts as provided
+      only when EVERY method has a real body. Accepting "at least one" leaked
+      FenwickTree into other problems' starters: its `__init__` is written for
+      you but `update` and `prefix_sum` are the exercise.
+
+    Returns (import_block, {class_name: source}).
+    """
+    import ast
+    src = _exercise_source(topic)
+    if not src:
+        return "", {}
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return "", {}
+
+    imports: List[str] = []
+    classes: Dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            segment = ast.get_source_segment(src, node)
+            if segment:
+                imports.append(segment)
+        elif isinstance(node, ast.ClassDef):
+            methods = [item for item in node.body
+                       if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            if not methods:
+                continue
+
+            def _written(item) -> bool:
+                body = [st for st in item.body
+                        if not (isinstance(st, ast.Expr)
+                                and isinstance(st.value, ast.Constant))]
+                return bool(body) and any(not isinstance(st, ast.Pass)
+                                          for st in body)
+
+            if all(_written(item) for item in methods):
+                segment = ast.get_source_segment(src, node)
+                if segment:
+                    classes[node.name] = segment
+    return "\n".join(imports), classes
+
+
+def starter_code(topic: int, targets: List[str],
+                 needs_scaffold: bool = False) -> str:
     """
     Pull the real signature and TODO hints straight out of exercise.py.
 
     Learners get the exact stub they would see in the file -- same parameter
     names, same type hints, same guidance comments -- so the browser and the
     filesystem never disagree about what a solution should look like.
+
+    `needs_scaffold` adds the provided helper classes, and is set when the
+    problem's tests construct inputs from the learner's own module: those specs
+    look up `module.AVLNode`, so a starter without it cannot be graded at all.
     """
     src = _exercise_source(topic)
     if not src:
@@ -118,12 +220,25 @@ def starter_code(topic: int, targets: List[str]) -> str:
             block.pop()
         blocks.append("\n".join(block))
 
+    imports, provided = _scaffolding(topic)
+    preamble: List[str] = []
+    if imports:
+        preamble.append(imports)
+    if needs_scaffold:
+        wanted = [name for name in provided if name not in targets]
+        if wanted:
+            preamble.append(
+                "# --- provided by the exercise file; the tests build inputs "
+                "from this ---")
+            preamble.extend(provided[name] for name in wanted)
+
     header = (
         "# Solve the function(s) below.\n"
         "# The signature and hints come straight from the exercise file.\n"
         "# You may add helper functions or imports above.\n"
     )
-    return header + "\n\n" + "\n\n\n".join(blocks) + "\n"
+    parts = [header] + preamble + blocks
+    return "\n\n".join(p.rstrip() for p in parts) + "\n"
 
 
 # ----------------------------------------------------------------- problems
@@ -135,7 +250,7 @@ def _problem_dict(p: Problem, with_detail: bool = False) -> Dict[str, Any]:
         "topic": p.topic,
         "topicName": p.topic_name,
         "num": p.num,
-        "title": p.title.title() if p.title.isupper() else p.title,
+        "title": pretty_title(p.title),
         "rawTitle": p.title,
         "difficulty": p.difficulty,
         "targets": p.unique_targets,
@@ -149,7 +264,11 @@ def _problem_dict(p: Problem, with_detail: bool = False) -> Dict[str, Any]:
             "outputDesc": p.output_desc,
             "example": p.example,
             "notes": [sp.note for sp in specs if sp.note],
-            "starterCode": {"python": starter_code(p.topic, p.unique_targets)},
+            "starterCode": {"python": starter_code(
+                p.topic, p.unique_targets,
+                needs_scaffold=any(sp.build is not None
+                                   or sp.build_cases is not None
+                                   for sp in specs))},
             "conventions": _conventions(specs),
         })
     return data

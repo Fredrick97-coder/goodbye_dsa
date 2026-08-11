@@ -55,6 +55,12 @@ def _call(fn, args, sp: Spec):
     if sp.inplace:
         # In-place problems mutate the first argument and return None.
         return safe[0]
+    if sp.accept_inplace and out is None:
+        # Some problems read naturally either way -- "reverse a queue" can
+        # hand back a new queue or rearrange the one it was given. Grading one
+        # contract would fail correct code on a coin flip, so fall back to the
+        # mutated argument when nothing was returned.
+        return safe[0]
     return out
 
 
@@ -72,7 +78,13 @@ def _matches(got: Any, want: Any, sp: Spec) -> bool:
         except Exception:                                   # noqa: BLE001
             return False
     elif sp.norm is not None:
-        got, want = sp.norm(got), sp.norm(want)
+        try:
+            got, want = sp.norm(got), sp.norm(want)
+        except Exception:                                   # noqa: BLE001
+            # An unwritten stub returns None, which most normalisers cannot
+            # transform. That is a non-match, not a crash in the harness --
+            # `sorted(None)` used to take down the whole run.
+            return False
     return _same(got, want, sp.tol)
 
 
@@ -147,18 +159,21 @@ def _unimplemented(got: Any, sp: Spec, args: tuple) -> bool:
 
     For OBJECT inputs (a linked-list head, a tree root) `==` falls back to
     identity and would always report False -- making an untouched stub look
-    like a wrong answer. Compare through `prop` in that case, which is what
-    turns the object into something comparable in the first place.
+    like a wrong answer. Compare through whichever transform the spec gave for
+    exactly that purpose: `prop` or `norm`. Consulting only `prop` was a bug --
+    a spec that used `norm` to read one field off a mutated node reported every
+    unwritten stub as a wrong answer instead.
     """
     written = _body_is_empty(_CURRENT_FN[0]) if _CURRENT_FN[0] else None
     if written is False:
         # The learner wrote real code, so nothing here is an unwritten stub.
         return False
-    if not sp.inplace:
+    if not (sp.inplace or sp.accept_inplace):
         return got is None
-    if sp.prop is not None:
+    comparable = sp.prop or sp.norm
+    if comparable is not None:
         try:
-            return sp.prop(got) == sp.prop(args[0])
+            return comparable(got) == comparable(args[0])
         except Exception:                                   # noqa: BLE001
             return False
     return got == args[0]
@@ -265,6 +280,8 @@ def _run_one(sp: Spec, module) -> Result:
             want = _ref_value(sp, args)
             if _matches(got, want, sp):
                 checked += 1
+                if not _unimplemented(got, sp, args):
+                    real_progress += 1
                 continue
             if _unimplemented(got, sp, args):
                 return Result(sp.num, sp.target, STUB, "not implemented")
@@ -274,6 +291,15 @@ def _run_one(sp: Spec, module) -> Result:
 
     if checked == 0:
         return Result(sp.num, sp.target, STUB, "nothing verifiable ran")
+
+    # Everything matched, but nothing matched in a way an empty stub could not
+    # have faked. This happens when a spec's only expected answer is None --
+    # `graph_colouring` on a graph that is not m-colourable, for instance.
+    # Calling that PASS would tell the learner they had solved a problem they
+    # had not opened.
+    if real_progress == 0:
+        return Result(sp.num, sp.target, STUB, "not implemented")
+
     return Result(sp.num, sp.target, PASS, checked=checked)
 
 

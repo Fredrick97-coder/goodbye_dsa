@@ -306,3 +306,56 @@ SPECS = [
     spec(24, "max_sliding_window_deque", ref=_ref_window_max, gen=g_window,
          cases=[(([1, 3, -1, -3, 5, 3, 6, 7], 3), [3, 3, 5, 5, 6, 7])]),
 ]
+
+
+# ---------------------------------------------------------- added coverage
+
+def _ref_external_merge(iterators):
+    """Everything the merged stream should yield, in order."""
+    out = []
+    for it in iterators:
+        out.extend(list(it))
+    return sorted(out)
+
+
+def g_streams(rng):
+    """
+    Lists, not generators.
+
+    The runner deep-copies arguments, and a generator cannot be copied -- nor
+    could the reference and the solution both consume the same one. Lists are
+    iterable, so a correct implementation treats them identically.
+    """
+    return ([sorted(rng.randint(0, 40) for _ in range(rng.randint(0, 6)))
+             for _ in range(rng.randint(1, 4))],)
+
+
+SPECS += [
+    spec(20, "IndexedHeap",
+         script=lambda cls: (lambda h: [
+             [h.push(item, pri) for item, pri in
+              (("a", 5), ("b", 3), ("c", 9), ("d", 7))],
+             h.decrease_key("c", 1),
+             h.pop(), h.pop(), h.pop(), h.pop(),
+         ][2:])(cls()),
+         ref_script=lambda: ["c", "b", "a", "d"],
+         note="push a:5 b:3 c:9 d:7, then decrease_key('c', 1). pop() returns "
+              "the ITEM in priority order, so 'c' comes out first"),
+
+    spec(21, "external_merge", ref=_ref_external_merge, gen=g_streams,
+         prop=list,
+         cases=[(([[1, 4, 7], [2, 5], [3, 6]],), [1, 2, 3, 4, 5, 6, 7]),
+                (([[]],), [])],
+         note="return a GENERATOR (or any iterable) yielding the merged "
+              "order; it is compared after being drained into a list"),
+
+    spec(22, "StreamingTopK",
+         script=lambda cls: (lambda s: [
+             [s.add(w) for w in
+              ("a", "b", "a", "c", "a", "b", "d", "b", "b")],
+             sorted(tuple(t) for t in s.top()),
+         ][1:])(cls(2)),
+         ref_script=lambda: [sorted([("a", 3), ("b", 4)])],
+         note="after a,b,a,c,a,b,d,b,b the counts are a:3 b:4 c:1 d:1, so the "
+              "top 2 are b:4 and a:3. Return (word, count) pairs"),
+]

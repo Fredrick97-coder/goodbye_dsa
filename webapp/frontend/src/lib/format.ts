@@ -42,6 +42,18 @@ export function pct(part: number, whole: number): number {
   return whole > 0 ? Math.round((part / whole) * 100) : 0;
 }
 
+/**
+ * Percentage for display, which is not the same as the number.
+ *
+ * One problem out of 342 rounds to 0%, and showing "0%" to someone who has just
+ * solved something reads as a bug. Anything above zero is at least "<1%".
+ */
+export function pctLabel(part: number, whole: number): string {
+  if (part <= 0 || whole <= 0) return "0%";
+  const value = Math.round((part / whole) * 100);
+  return value === 0 ? "<1%" : `${value}%`;
+}
+
 /** Local YYYY-MM-DD, matching how the server buckets activity days. */
 export function isoDay(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");

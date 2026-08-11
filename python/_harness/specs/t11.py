@@ -192,6 +192,89 @@ def g_graph_pair(rng):
     return (g, s, rng.randrange(len(g)))
 
 
+def g_alien(rng):
+    """
+    Words that force a UNIQUE total order.
+
+    Many alien-dictionary inputs admit several valid orders, and there is no
+    way to check "any valid topological order" from the return value alone --
+    a spec only sees the output, not the graph. Emitting the single-letter
+    words in order pins the answer down to exactly one string, so the test can
+    compare directly instead of guessing.
+    """
+    letters = rng.sample("abcdefghij", rng.randint(2, 6))
+    words = list(letters)
+    # A few consistent multi-letter words, which must not add constraints.
+    for _ in range(rng.randint(0, 3)):
+        i = rng.randrange(len(letters))
+        words.append(letters[i] + letters[i])
+    return (words,)
+
+
+def _ref_alien(words):
+    """
+    A real topological sort over the constraints the word list implies.
+
+    An earlier version simply read off the single-letter words, which passed
+    every generated case and failed the classic example -- the self-consistency
+    check caught it. Neighbouring words give one constraint each, at their
+    first differing character; a word followed by its own prefix is invalid.
+    Children are visited in sorted order so the result is deterministic.
+    """
+    from collections import defaultdict, deque
+    adj = defaultdict(set)
+    indeg = {ch: 0 for word in words for ch in word}
+    for first, second in zip(words, words[1:]):
+        for a, b in zip(first, second):
+            if a != b:
+                if b not in adj[a]:
+                    adj[a].add(b)
+                    indeg[b] += 1
+                break
+        else:
+            if len(first) > len(second):
+                return ""
+    q = deque(sorted(ch for ch in indeg if indeg[ch] == 0))
+    out = []
+    while q:
+        ch = q.popleft()
+        out.append(ch)
+        for nxt in sorted(adj[ch]):
+            indeg[nxt] -= 1
+            if indeg[nxt] == 0:
+                q.append(nxt)
+    return "".join(out) if len(out) == len(indeg) else ""
+
+
+def g_chain(rng):
+    """A prerequisite chain, whose topological order is unique."""
+    n = rng.randint(1, 8)
+    order = list(range(n))
+    rng.shuffle(order)
+    prereqs = [(order[i + 1], order[i]) for i in range(n - 1)]
+    rng.shuffle(prereqs)
+    return (n, prereqs)
+
+
+def _ref_find_order(num_courses, prereqs):
+    from collections import defaultdict, deque
+    adj = defaultdict(list)
+    indeg = [0] * num_courses
+    for course, need in prereqs:
+        adj[need].append(course)
+        indeg[course] += 1
+    q = deque([c for c in range(num_courses) if indeg[c] == 0])
+    out = []
+    while q:
+        c = q.popleft()
+        out.append(c)
+        for nxt in adj[c]:
+            indeg[nxt] -= 1
+            if indeg[nxt] == 0:
+                q.append(nxt)
+    return out if len(out) == num_courses else None
+
+
 SPECS = [
     spec(1, "dfs_traversal", prop=lambda x: None if x is None else sorted(set(x)),
          ref=lambda g, s: _reachable(g, s), gen=g_graph_start,
@@ -247,4 +330,49 @@ SPECS += [
          cases=[((_n, _edges), True)],
          note="ANY valid topological order is accepted")
     for _n, _edges in _TOPO_CASES
+
+]
+
+
+# `_topo_valid` above shows the idiom for "any valid answer is fine": build one
+# spec per case with a `prop` closed over that case's inputs. A single spec
+# cannot do it, because `prop` sees only the return value.
+def _order_valid(order, n, prereqs):
+    if order is None:
+        return False
+    if sorted(order) != list(range(n)):
+        return False
+    position = {c: i for i, c in enumerate(order)}
+    return all(position[need] < position[course] for course, need in prereqs)
+
+
+_ORDER_CASES = [
+    (4, [(1, 0), (2, 0), (3, 1), (3, 2)]),
+    (2, [(1, 0)]),
+    (3, []),
+    (6, [(1, 0), (2, 1), (3, 2), (4, 2), (5, 4)]),
+]
+
+SPECS += [
+    spec(12, "find_order",
+         prop=(lambda n, e: lambda o: _order_valid(o, n, e))(_n, _edges),
+         cases=[((_n, _edges), True)],
+         note="ANY valid course order is accepted")
+    for _n, _edges in _ORDER_CASES
+]
+
+SPECS += [
+    spec(11, "alien_order", ref=_ref_alien, gen=g_alien,
+         cases=[((["wrt", "wrf", "er", "ett", "rftt"],), "wertf"),
+                ((["z", "x", "z"],), ""),
+                ((["abc", "ab"],), "")],
+         note="return '' when the order is impossible (a cycle, or a word "
+              "followed by its own prefix). The generated cases pin down a "
+              "single valid order, so the expected answer is unambiguous"),
+
+    spec(12, "find_order", ref=_ref_find_order, gen=g_chain,
+         cases=[((2, [(1, 0), (0, 1)]), None), ((1, []), [0])],
+         note="prerequisites are (course, needs_first). Return None when a "
+              "cycle makes it impossible. Generated cases are chains, whose "
+              "valid order is unique"),
 ]

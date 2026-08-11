@@ -38,6 +38,10 @@ class Spec:
                                                # then compared to `expected`
                                                # (e.g. "is it a valid heap?")
     inplace: bool = False                      # mutates args[0], returns None
+    accept_inplace: bool = False                # EITHER contract is fine: use
+                                               # the return value, or the
+                                               # mutated first argument when
+                                               # the function returns None
     tol: Optional[float] = None                # float comparison tolerance
     script: Optional[Callable] = None          # for classes: (cls) -> result
     ref_script: Optional[Callable] = None      # reference for `script`

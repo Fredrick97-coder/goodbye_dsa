@@ -219,6 +219,137 @@ def c_lca(module):
             ((_make(module, t), 5, 5), 5)]
 
 
+def _shape(node):
+    """Exact structure as nested tuples -- None for an absent child."""
+    if node is None:
+        return None
+    return (node.value, _shape(node.left), _shape(node.right))
+
+
+def _ref_vertical(root):
+    """
+    Columns left to right; within a column, top to bottom in BFS order.
+
+    Ties at the same (row, column) keep BFS insertion order, which is the
+    LeetCode 314 convention. LeetCode 987 instead sorts tied values, so the
+    note says which one applies.
+    """
+    if root is None:
+        return []
+    from collections import defaultdict, deque
+    cols = defaultdict(list)
+    q = deque([(root, 0)])
+    while q:
+        node, col = q.popleft()
+        cols[col].append(node.value)
+        if node.left:
+            q.append((node.left, col - 1))
+        if node.right:
+            q.append((node.right, col + 1))
+    return [cols[c] for c in sorted(cols)]
+
+
+class _TN:
+    """A node the reference can allocate without reaching into the module."""
+
+    def __init__(self, value):
+        self.value = value
+        self.left = None
+        self.right = None
+
+
+def _ref_build_tree(preorder, inorder):
+    if not preorder:
+        return None
+    root = _TN(preorder[0])
+    cut = inorder.index(preorder[0])
+    root.left = _ref_build_tree(preorder[1:cut + 1], inorder[:cut])
+    root.right = _ref_build_tree(preorder[cut + 1:], inorder[cut + 1:])
+    return root
+
+
+def _random_tree(TreeNode, rng, n):
+    """A random-shaped tree with distinct values."""
+    if n == 0:
+        return None
+    values = rng.sample(range(1, 100), n)
+    root = TreeNode(values[0])
+    nodes = [root]
+    for v in values[1:]:
+        parent = rng.choice(nodes)
+        while parent.left is not None and parent.right is not None:
+            parent = rng.choice(nodes)
+        child = TreeNode(v)
+        if parent.left is None and (parent.right is not None or rng.random() < 0.5):
+            parent.left = child
+        else:
+            parent.right = child
+        nodes.append(child)
+    return root
+
+
+def _preorder_vals(node):
+    return [] if node is None else [node.value] + _preorder_vals(node.left) + _preorder_vals(node.right)
+
+
+def _inorder_vals(node):
+    return [] if node is None else _inorder_vals(node.left) + [node.value] + _inorder_vals(node.right)
+
+
+def b_traversals(module, rng):
+    tree = _random_tree(module.TreeNode, rng, rng.randint(0, 10))
+    return (_preorder_vals(tree), _inorder_vals(tree))
+
+
+def c_build_tree(module):
+    """
+    Expected values are TREES, not shapes.
+
+    This spec compares with `norm`, which transforms both sides -- so handing
+    over a pre-computed shape tuple would have `norm` try to read `.val` off a
+    tuple. The expectation has to be the same kind of thing as the answer.
+    """
+    return [(([3, 9, 20, 15, 7], [9, 3, 15, 20, 7]),
+             _ref_build_tree([3, 9, 20, 15, 7], [9, 3, 15, 20, 7])),
+            (([], []), None)]
+
+
+def b_vertical(module, rng):
+    return (_random_tree(module.TreeNode, rng, rng.randint(0, 10)),)
+
+
+def c_vertical(module):
+    TreeNode = module.TreeNode
+    root = TreeNode(3)
+    root.left, root.right = TreeNode(9), TreeNode(20)
+    root.right.left, root.right.right = TreeNode(15), TreeNode(7)
+    return [((root,), [[9], [3, 15], [20], [7]]), ((None,), [])]
+
+
+def c_serialize_roundtrip(module):
+    """
+    Cases for `deserialize`, built by calling the learner's own `serialize`.
+
+    The serialized FORMAT is the learner's choice, so comparing strings would
+    be wrong. What must hold is that their pair round-trips: deserialize of
+    serialize rebuilds the same tree. `build_cases` gets the module, which is
+    the only place a spec can reach their serialize to set this up.
+    """
+    import random as _random
+    rng = _random.Random(20250811)
+    out = []
+    for n in (0, 1, 5, 9):
+        tree = _random_tree(module.TreeNode, rng, n)
+        out.append(((module.serialize(tree),), _shape(tree)))
+    return out
+
+
+def c_serialize_is_text(module):
+    rng = __import__("random").Random(7)
+    tree = _random_tree(module.TreeNode, rng, 6)
+    return [((tree,), True), ((None,), True)]
+
+
 SPECS = [
     spec(1, "inorder_traversal", ref=_inorder, build=b_tree,
          build_cases=c_inorder),
@@ -239,4 +370,21 @@ SPECS = [
     spec(9, "max_path_sum", ref=_max_path_sum, build=b_signed_tree,
          build_cases=c_max_path,
          note="any node to any node; at least one node must be used"),
+
+    spec(10, "serialize", prop=lambda s: isinstance(s, str) and len(s) >= 0,
+         build_cases=c_serialize_is_text,
+         note="any text format is fine -- correctness is checked by whether "
+              "your deserialize can rebuild the tree from it"),
+    spec(10, "deserialize", prop=_shape, build_cases=c_serialize_roundtrip,
+         note="graded as a ROUND TRIP against your own serialize, so the "
+              "format is entirely your choice"),
+
+    spec(11, "vertical_order", ref=_ref_vertical, build=b_vertical,
+         build_cases=c_vertical,
+         note="columns left to right; within a column, BFS (top-down) order, "
+              "which is the LeetCode 314 convention"),
+
+    spec(12, "build_tree", ref=_ref_build_tree, build=b_traversals,
+         norm=_shape, build_cases=c_build_tree,
+         note="values are distinct; returns the reconstructed root"),
 ]

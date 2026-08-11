@@ -242,3 +242,170 @@ SPECS = [
                 (("aa", "*"), True), (("cb", "?a"), False),
                 (("", "*"), True), (("", ""), True)]),
 ]
+
+
+# ---------------------------------------------------------- added coverage
+
+def _trie_of(module, words):
+    """
+    A trie built directly out of the provided TrieNode.
+
+    `autocomplete` takes a trie, and building it with the learner's own Trie
+    class would make problem 3 fail whenever problem 1 is unwritten. TrieNode
+    is given to the learner complete, so the spec can assemble the structure
+    itself and keep the two problems independent.
+    """
+    class _Holder:
+        pass
+
+    root = module.TrieNode()
+    for word in words:
+        node = root
+        for ch in word:
+            node = node.children.setdefault(ch, module.TrieNode())
+            node.count += 1
+        node.is_word = True
+    holder = _Holder()
+    holder.root = root
+    return holder
+
+
+_AUTO_WORDS = ["car", "card", "care", "cat", "dog", "do"]
+
+
+def c_autocomplete(module):
+    trie = _trie_of(module, _AUTO_WORDS)
+    return [((trie, "ca"), ["car", "card", "care", "cat"]),
+            ((trie, "do"), ["do", "dog"]),
+            ((trie, "z"), []),
+            ((trie, ""), sorted(_AUTO_WORDS))]
+
+
+def _ref_bwt(s):
+    """BWT via the sorted rotations of s + sentinel."""
+    text = s + "$"
+    rotations = sorted(text[i:] + text[:i] for i in range(len(text)))
+    return "".join(rot[-1] for rot in rotations)
+
+
+def _ref_bwt_inverse(bwt):
+    """
+    Standard repeated-sorting reconstruction, returning the original WITHOUT
+    the sentinel.
+    """
+    rows = [""] * len(bwt)
+    for _ in range(len(bwt)):
+        rows = sorted(bwt[i] + rows[i] for i in range(len(bwt)))
+    for row in rows:
+        if row.endswith("$"):
+            return row[:-1]
+    return ""
+
+
+def g_bwt_text(rng):
+    return ("".join(rng.choice("ab_n") for _ in range(rng.randint(1, 12))),)
+
+
+def g_bwt_code(rng):
+    return (_ref_bwt("".join(rng.choice("ab_n")
+                             for _ in range(rng.randint(1, 12)))),)
+
+
+def _ref_aho(patterns, text):
+    """Brute force: every occurrence of every pattern, as (start, pattern)."""
+    out = []
+    for pat in patterns:
+        if not pat:
+            continue
+        start = text.find(pat)
+        while start != -1:
+            out.append((start, pat))
+            start = text.find(pat, start + 1)
+    return out
+
+
+def _as_hit_set(hits):
+    if hits is None:
+        return None
+    return sorted(tuple(h) for h in hits)
+
+
+def g_aho(rng):
+    letters = "abc"
+    patterns = sorted({"".join(rng.choice(letters)
+                               for _ in range(rng.randint(1, 3)))
+                       for _ in range(rng.randint(1, 4))})
+    text = "".join(rng.choice(letters) for _ in range(rng.randint(0, 20)))
+    return (patterns, text)
+
+
+SPECS += [
+    spec(1, "Trie",
+         script=lambda cls: (lambda t: [
+             [t.insert(w) for w in ("cat", "car", "care")],
+             t.search("cat"), t.search("ca"), t.search("care"),
+             t.search("dog"), t.search(""),
+         ][1:])(cls()),
+         ref_script=lambda: [True, False, True, False, False],
+         note="insert cat/car/care, then search cat, ca, care, dog and the "
+              "empty string. Reaching a node is not enough -- only words that "
+              "were inserted count"),
+
+    spec(3, "autocomplete", build_cases=c_autocomplete,
+         note="results sorted; an empty prefix returns every word. The trie "
+              "you are handed is already built, so this does not depend on "
+              "problem 1"),
+
+    spec(11, "WildcardDictionary",
+         script=lambda cls: (lambda d: [
+             [d.add(w) for w in ("bad", "dad", "mad")],
+             d.search("pad"), d.search("bad"), d.search(".ad"),
+             d.search("b.."), d.search("..."), d.search("b"),
+         ][1:])(cls()),
+         ref_script=lambda: [False, True, True, True, True, False],
+         note="'.' matches exactly one character, so a pattern only matches "
+              "words of the same length"),
+
+    spec(16, "AhoCorasick",
+         script=lambda cls: sorted(
+             tuple(hit) for hit in
+             cls(["he", "she", "his", "hers"]).search("ushers")),
+         ref_script=lambda: sorted([(1, "she"), (2, "he"), (2, "hers")]),
+         note="search returns (start_index, pattern) for EVERY occurrence, "
+              "including overlaps -- 'she' at 1 and 'he' at 2 both count"),
+
+    spec(21, "StreamChecker",
+         script=lambda cls: (lambda sc: [sc.query(ch) for ch in "abcdef"])(
+             cls(["cd", "f", "kl"])),
+         ref_script=lambda: [False, False, False, True, False, True],
+         note="query returns True when any stored word is a SUFFIX of the "
+              "stream so far. Feeding a..f with words cd/f/kl: True at 'd' "
+              "and at 'f'"),
+
+    spec(22, "RadixTree",
+         script=lambda cls: (lambda t: [
+             [t.insert(w) for w in ("romane", "romanus", "romulus")],
+             t.search("romane"), t.search("roman"), t.search("romulus"),
+             t.search("rom"), t.search("romanu"),
+         ][1:])(cls()),
+         ref_script=lambda: [True, False, True, False, False],
+         note="compression is an internal detail; what is graded is that "
+              "search still answers exactly for stored words"),
+
+    spec(24, "bwt_transform", ref=_ref_bwt, gen=g_bwt_text,
+         cases=[(("banana",), "annb$aa")],
+         note="the input does NOT carry the sentinel -- append '$' yourself. "
+              "'banana' -> 'annb$aa', matching the stated example"),
+    spec(24, "bwt_inverse", ref=_ref_bwt_inverse, gen=g_bwt_code,
+         cases=[(("annb$aa",), "banana")],
+         note="return the original string WITHOUT the sentinel"),
+
+    # A second scenario for the same problem: nested and overlapping patterns
+    # are where a wrong failure-link implementation shows up.
+    spec(16, "AhoCorasick",
+         script=lambda cls: sorted(
+             tuple(hit) for hit in cls(["a", "ab", "bc"]).search("abcabc")),
+         ref_script=lambda: sorted([(0, "a"), (0, "ab"), (1, "bc"),
+                                    (3, "a"), (3, "ab"), (4, "bc")]),
+         note="overlapping and nested patterns must all be reported"),
+]

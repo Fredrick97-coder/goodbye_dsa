@@ -8,8 +8,9 @@ import { Results } from "../components/Results";
 import { Statement } from "../components/Statement";
 import { SubmissionsTab } from "../components/SubmissionsTab";
 import { DifficultyBadge, Empty, Icon, Segmented, Spinner } from "../components/ui";
-import { api, drafts } from "../lib/api";
+import { api, ApiError, drafts } from "../lib/api";
 import { useAppData } from "../lib/app-data";
+import { draftOwner, useAuth } from "../lib/auth";
 import type { Language, ProblemDetail, SubmitReport } from "../lib/types";
 
 type LeftTab = "description" | "submissions" | "notes";
@@ -18,6 +19,8 @@ export default function Solve() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { meta, patch, byId } = useAppData();
+  const { user, requireAuth } = useAuth();
+  const owner = draftOwner(user);
 
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
   const [langId, setLangId] = useState("python");
@@ -49,7 +52,7 @@ export default function Solve() {
         const detail = await api.problem(id);
         if (!alive) return;
         setProblem(detail);
-        setSource(drafts.load(id, langId) ?? detail.starterCode[langId] ?? "");
+        setSource(drafts.load(owner, id, langId) ?? detail.starterCode[langId] ?? "");
       } catch (err) {
         if (alive) setLoadError(err instanceof Error ? err.message : String(err));
       }
@@ -63,7 +66,7 @@ export default function Solve() {
   /* swap the buffer when the language changes, without refetching */
   useEffect(() => {
     if (!problem) return;
-    setSource(drafts.load(problem.id, langId) ?? problem.starterCode[langId] ?? "");
+    setSource(drafts.load(owner, problem.id, langId) ?? problem.starterCode[langId] ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [langId]);
 
@@ -73,12 +76,12 @@ export default function Solve() {
     if (!problem) return;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(
-      () => drafts.save(problem.id, langId, source), 400);
+      () => drafts.save(owner, problem.id, langId, source), 400);
     return () => window.clearTimeout(saveTimer.current);
-  }, [source, problem, langId]);
+  }, [source, problem, langId, owner]);
 
   /* ------------------------------------------------------------- execution */
-  const execute = useCallback(async (mode: "test" | "run") => {
+  const runNow = useCallback(async (mode: "test" | "run") => {
     if (!problem || running) return;
     setRunning(true);
     setRunError(null);
@@ -101,21 +104,49 @@ export default function Solve() {
         });
       }
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : String(err));
+      // A 401 here means the session expired between loading the page and
+      // pressing Submit. The provider has already dropped us to signed-out, so
+      // reopening the gate is the right move rather than showing a raw error.
+      if (err instanceof ApiError && err.isUnauthorized) {
+        requireAuth(() => { void runNow("test"); },
+                    "Sign in to submit and track your progress.");
+      } else {
+        setRunError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setRunning(false);
     }
-  }, [problem, langId, source, running, patch, summary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problem, langId, source, running, patch, summary, requireAuth]);
+
+  /**
+   * Submit is gated; Run is not.
+   *
+   * You can write and execute code without an account -- the prompt appears at
+   * the moment your work would be recorded, and the submission is replayed
+   * automatically once you are in, so the click is never wasted.
+   */
+  const execute = useCallback((mode: "test" | "run") => {
+    if (mode === "run") { void runNow("run"); return; }
+    requireAuth(() => { void runNow("test"); },
+                "Sign in to submit and track your progress.");
+  }, [runNow, requireAuth]);
 
   const reset = useCallback(() => {
     if (!problem) return;
-    drafts.clear(problem.id, langId);
+    drafts.clear(owner, problem.id, langId);
     setSource(problem.starterCode[langId] ?? "");
     setReport(null);
     setRunError(null);
-  }, [problem, langId]);
+  }, [problem, langId, owner]);
 
-  const star = async () => {
+  const star = () => {
+    if (!problem) return;
+    requireAuth(() => void toggleStar(),
+                "Sign in to bookmark problems.");
+  };
+
+  const toggleStar = async () => {
     if (!problem) return;
     const next = !problem.bookmarked;
     setProblem({ ...problem, bookmarked: next });
@@ -134,8 +165,8 @@ export default function Solve() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === "Enter") { e.preventDefault(); void execute("test"); }
-      if (e.key === "'") { e.preventDefault(); void execute("run"); }
+      if (e.key === "Enter") { e.preventDefault(); execute("test"); }
+      if (e.key === "'") { e.preventDefault(); execute("run"); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -192,7 +223,7 @@ export default function Solve() {
           )}
         </div>
 
-        <button onClick={() => void star()} title={problem.bookmarked ? "Remove bookmark" : "Bookmark"}
+        <button onClick={star} title={problem.bookmarked ? "Remove bookmark" : "Bookmark"}
                 className={`btn-ghost !px-1.5 !py-1.5 ${problem.bookmarked ? "text-amber-400" : ""}`}>
           <Icon name={problem.bookmarked ? "star" : "starOutline"} className="h-4 w-4" />
         </button>
@@ -217,12 +248,12 @@ export default function Solve() {
           <button onClick={reset} className="btn-ghost !px-2 !py-1.5" title="Reset to starter code">
             <Icon name="reset" className="h-4 w-4" />
           </button>
-          <button onClick={() => void execute("run")} disabled={running}
+          <button onClick={() => execute("run")} disabled={running}
                   className="btn-outline !py-1.5" title="Run (⌘')">
             {running ? <Spinner /> : <Icon name="play" className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline">Run</span>
           </button>
-          <button onClick={() => void execute("test")} disabled={running}
+          <button onClick={() => execute("test")} disabled={running}
                   className="btn-primary !py-1.5" title="Submit (⌘↵)">
             {running ? <Spinner /> : <Icon name="check" className="h-4 w-4" />}
             <span className="hidden sm:inline">Submit</span>
@@ -257,17 +288,27 @@ export default function Solve() {
               </div>
               <div className="min-h-0 flex-1">
                 {leftTab === "description" && <Statement problem={problem} />}
-                {leftTab === "submissions" && (
+                {leftTab === "submissions" && (user ? (
                   <SubmissionsTab problemId={problem.id} reloadKey={historyKey}
                                   onRestore={setSource} />
-                )}
-                {leftTab === "notes" && (
+                ) : (
+                  <Empty icon="history" title="History needs an account"
+                         hint="Every graded attempt is kept with the code you wrote, so you can see what changed."
+                         action={<button onClick={() => requireAuth(() => {}, "Sign in to keep your submission history.")}
+                                         className="btn-primary mt-1">Sign in</button>} />
+                ))}
+                {leftTab === "notes" && (user ? (
                   <NotesTab problemId={problem.id}
                             onSavedChange={(has) => {
                               setProblem((p) => (p ? { ...p, hasNote: has } : p));
                               patch(problem.id, { hasNote: has });
                             }} />
-                )}
+                ) : (
+                  <Empty icon="note" title="Notes need an account"
+                         hint="Sign in and your notes are saved per problem, so the pattern you spotted is there next time."
+                         action={<button onClick={() => requireAuth(() => {}, "Sign in to keep notes.")}
+                                         className="btn-primary mt-1">Sign in</button>} />
+                ))}
               </div>
             </div>
           </Panel>
@@ -293,7 +334,7 @@ export default function Solve() {
                   <div className="min-h-0 flex-1">
                     {language
                       ? <Editor value={source} language={language}
-                                onChange={setSource} onSubmit={() => void execute("test")} />
+                                onChange={setSource} onSubmit={() => execute("test")} />
                       : <Empty icon="doc" title="No language selected" />}
                   </div>
                 </div>
