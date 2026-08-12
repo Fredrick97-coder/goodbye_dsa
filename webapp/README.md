@@ -56,6 +56,9 @@ cd frontend && npm install
 | **Per-problem notes, autosaved** | ✅ |
 | **Bookmarks, random unsolved problem, prev/next navigation** | ✅ |
 | **Chosen language remembered per account** | ✅ survives reload and re-login |
+| **Courses: 258 lessons of theory, read in the app** | ✅ |
+| **Worked examples runnable in the sandbox** | ✅ |
+| **Per-lesson progress, alongside solved problems** | ✅ |
 | `stdout` capture and a Console tab | ✅ |
 | Drafts autosaved per problem, survive refresh | ✅ (localStorage) |
 | Resizable panels, `⌘↵` submit, `⌘'` run | ✅ |
@@ -68,7 +71,7 @@ cd frontend && npm install
 | **Env-driven configuration, with a prod safety gate** | ✅ |
 | **Structured logs, request ids, error boundary, security headers** | ✅ |
 | **Ops CLI: migrate / backup / vacuum / users / reset-password** | ✅ |
-| **Test suite (138 tests)** | ✅ |
+| **Test suite (167 tests)** | ✅ |
 | **Confetti on an accepted submission** | ✅ lazy-loaded, respects reduced-motion |
 
 ## Honest limitations
@@ -174,6 +177,8 @@ webapp/
 │   ├── auth.py          scrypt, sessions, rate limiting, the CSRF guard
 │   ├── observability.py logging, request ids, error boundary, headers
 │   ├── cli.py           operational commands
+│   ├── content.py       courses, modules, lessons from the filesystem
+│   ├── courses_api.py   the learning routes
 │   ├── languages.py     the language table: one row per language
 │   ├── codegen.py       renders starter code from a neutral signature
 │   ├── executors/       local | seatbelt | docker, behind one contract
@@ -391,7 +396,7 @@ rollout fails its health check instead of serving errors.
 ## Tests
 
 ```bash
-cd backend && python3 -m pytest tests -q        # 138 tests, ~35s
+cd backend && python3 -m pytest tests -q        # 167 tests, ~40s
 ```
 
 Each test gets its own database file and its own reloaded configuration, so they
@@ -404,6 +409,51 @@ mount, open a socket, read `$HOME`, and spawn `/bin/ls` — against every sandbo
 the host offers. They *skip with a stated reason* when a backend is unavailable
 rather than passing quietly, so "all green" can never hide "the sandbox was never
 exercised".
+
+## Courses
+
+The platform is a course as well as a judge. `python/theory.md` × 22 was already
+34,000 lines of written material the app could not see; it is now **258 lessons**
+served through a reader, and it needed no re-authoring.
+
+```
+Course    "Data Structures & Algorithms"        ← python/course.json
+ └─ Module (22)      a topic directory
+     ├─ Lessons (258)   the ## sections of theory.md
+     ├─ Examples        examples.py, run in the sandbox on request
+     ├─ Practice (342)  the graded problems for that topic
+     └─ Project         project.py
+```
+
+**Content lives in files; the database stores only what a learner did.** Same rule
+as the problem catalogue: authored material belongs in git where a change is
+reviewable in a diff, and `lesson_progress` is the single table reading adds.
+
+**A second course is a directory**, not a code change: drop a `course.json` next
+to `python/` and it appears on the shelf. Nothing in the reader knows about data
+structures — `FORGE_COURSES_ROOT` says where to look.
+
+```json
+{ "id": "system-design", "title": "System Design",
+  "modules": [ { "id": "01", "dir": "01_scaling", "title": "…",
+                 "level": "Beginner" } ] }
+```
+
+Three parsing decisions worth knowing:
+
+* **Lesson ids are slugs, not positions.** Inserting a section must not shift
+  every id and silently reset progress. Renaming one loses that single checkmark,
+  which is the cheaper failure.
+* **The parser is fence-aware.** These files hold 315 code blocks full of `#`
+  comments; a naive scan reported one module as having 21 top-level headings.
+* **Reading time counts prose and code separately.** Prose-only counting put
+  "1 min" on a heap lesson containing three implementations — the kind of number
+  that makes a learner distrust every other number on the page.
+
+Worked examples go through the *same* isolated runner as a submission, so there is
+no second execution path to secure, and a demo that hangs is contained by the same
+limits. Output is capped at `FORGE_EXEC_MAX_STDOUT_BYTES` (64 KB) and truncation
+says so — at the old 8 KB cap, topic 22's examples were silently cut in half.
 
 ## Preferences
 

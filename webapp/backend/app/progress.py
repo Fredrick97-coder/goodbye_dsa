@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from . import repo, store
+from . import content, repo, store
 
 DIFFICULTIES = ["Easy", "Medium", "Hard", "Challenge"]
 
@@ -111,7 +111,40 @@ def overview(user_id: str) -> Dict[str, Any]:
         "recent": recent,
         "resume": _resume(user_id),
         "nextUp": _next_up(user_id, limit=5),
+        "learning": _learning(user_id),
     }
+
+
+def _learning(user_id: str) -> Dict[str, Any]:
+    """
+    Where the learner is in the reading, for the dashboard.
+
+    The platform is a course as well as a judge now, so a dashboard that only
+    counted solved problems would tell half the story -- and would make the
+    theory feel optional.
+    """
+    out: Dict[str, Any] = {"courses": [], "next": None}
+    for course in content.all_courses():
+        done = store.completed_lessons(user_id, course.id)
+        total = sum(len(m.lessons) for m in course.modules)
+        out["courses"].append({
+            "id": course.id, "title": course.title,
+            "lessonsRead": len(done), "lessonCount": total,
+        })
+        if out["next"] is None:
+            for module in course.modules:
+                for lesson in module.lessons:
+                    if f"{module.id}/{lesson.slug}" not in done:
+                        out["next"] = {
+                            "courseId": course.id, "courseTitle": course.title,
+                            "moduleId": module.id, "moduleTitle": module.title,
+                            "slug": lesson.slug, "title": lesson.title,
+                            "minutes": lesson.minutes,
+                        }
+                        break
+                if out["next"]:
+                    break
+    return out
 
 
 def _resume(user_id: str) -> Optional[Dict[str, Any]]:

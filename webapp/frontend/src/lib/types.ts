@@ -187,6 +187,14 @@ export interface TopicProgress {
   level: string;
 }
 
+export interface Learning {
+  courses: { id: string; title: string; lessonsRead: number; lessonCount: number }[];
+  next: {
+    courseId: string; courseTitle: string; moduleId: string;
+    moduleTitle: string; slug: string; title: string; minutes: number;
+  } | null;
+}
+
 export interface Overview {
   totals: { problems: number; solved: number; attempted: number; tested: number };
   byDifficulty: DifficultyProgress[];
@@ -201,6 +209,7 @@ export interface Overview {
     id: string; title: string; difficulty: Difficulty;
     topic: number; topicName: string;
   }[];
+  learning: Learning;
 }
 
 

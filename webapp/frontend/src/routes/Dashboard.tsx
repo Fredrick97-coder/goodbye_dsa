@@ -116,7 +116,8 @@ export default function Dashboard() {
   if (!data || !meta)
     return <div className="grid h-full place-items-center"><Spinner className="h-6 w-6 text-volt-400" /></div>;
 
-  const { totals, byDifficulty, byTopic, activity, recent, resume, nextUp } = data;
+  const { totals, byDifficulty, byTopic, activity, recent, resume, nextUp,
+          learning } = data;
   const untouched = totals.problems - totals.solved - totals.attempted;
 
   return (
@@ -206,6 +207,32 @@ export default function Dashboard() {
               auto-graded, so Submit gives real feedback rather than silence.
             </p>
           </div>
+        )}
+
+        {/* ------------------------------------------------------- learning */}
+        {learning?.next && (
+          <Link to={`/learn/${learning.next.courseId}/${learning.next.moduleId}/${learning.next.slug}`}
+                className="panel group flex items-center gap-4 rounded-2xl px-5 py-4
+                           transition-all hover:border-sky-500/30">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl
+                            bg-sky-500/12">
+              <Icon name="book" className="h-4.5 w-4.5 text-sky-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-[.14em] text-mist-400">
+                {learning.courses[0] && learning.courses[0].lessonsRead > 0
+                  ? "Keep reading" : "Start with the theory"}
+              </p>
+              <p className="mt-1 truncate text-[14px] font-semibold text-mist-100
+                            group-hover:text-white">{learning.next.title}</p>
+              <p className="mt-0.5 truncate text-[11.5px] text-mist-400">
+                {learning.next.moduleTitle} · {learning.next.minutes} min
+                {learning.courses[0] && ` · ${learning.courses[0].lessonsRead}/${learning.courses[0].lessonCount} lessons read`}
+              </p>
+            </div>
+            <Icon name="arrowRight" className="h-4 w-4 shrink-0 text-mist-400
+                                               group-hover:text-sky-300" />
+          </Link>
         )}
 
         {/* ------------------------------------------------- next and recent */}
