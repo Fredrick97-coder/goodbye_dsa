@@ -66,7 +66,28 @@ def client(env):
         yield c
 
 
-@pytest.fixture()
+def _unlock_all(client) -> None:
+    """
+    Grant every module, for tests that are not about progression.
+
+    Kept explicit rather than folded into the `account` fixture: a test that
+    submits to problem 03-01 should say out loud that it needed the gate opened,
+    otherwise the next person to add a test cannot tell whether the lock applies.
+    """
+    from app import content
+    for module in content.get("dsa").modules:
+        client.post(f"/api/courses/dsa/modules/{module.id}/unlock")
+
+
+@pytest.fixture
+def open_account(account):
+    """A signed-in account with the whole course unlocked."""
+    client, email, password = account
+    _unlock_all(client)
+    return client, email, password
+
+
+@pytest.fixture
 def account(client):
     """A registered, signed-in account. Returns (client, email, password)."""
     email, password = "learner@example.com", "a sufficiently long password"

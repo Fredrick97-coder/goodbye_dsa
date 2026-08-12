@@ -171,6 +171,7 @@ export default function Problems() {
             <h1 className="text-[21px] font-bold tracking-tight text-white">Problem Set</h1>
             <p className="mt-1 text-[12.5px] text-mist-400">
               {filtered.length} shown{user ? ` · ${solvedHere} solved` : ""}
+              {lockedCount > 0 && ` · ${lockedCount} locked`}
               {f.active > 0 && " · filtered"}
             </p>
           </div>

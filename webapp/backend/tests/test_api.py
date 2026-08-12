@@ -40,8 +40,8 @@ def test_anonymous_can_run_but_not_submit(client):
     assert "sign in" in res.json()["detail"]
 
 
-def test_signed_in_can_submit_and_it_is_recorded(account):
-    client, _, _ = account
+def test_signed_in_can_submit_and_it_is_recorded(open_account):
+    client, _, _ = open_account
     res = client.post("/api/submit", json={
         "problemId": "03-01", "language": "python",
         "source": "def reverse_string(s):\n    return s[::-1]\n",
@@ -60,9 +60,9 @@ def test_running_is_never_recorded(account):
     assert client.get("/api/submissions").json() == []
 
 
-def test_submitting_untouched_starter_code_is_not_recorded(account):
+def test_submitting_untouched_starter_code_is_not_recorded(open_account):
     """`stub` means "not attempted", and history should not fill up with it."""
-    client, _, _ = account
+    client, _, _ = open_account
     res = client.post("/api/submit", json={
         "problemId": "03-01", "language": "python",
         "source": "def reverse_string(s):\n    pass\n", "mode": "test"})
@@ -77,6 +77,9 @@ def test_accounts_cannot_see_each_other(client):
     first = client.post("/api/auth/register",
                         json={"email": "one@example.com", "password": "password one"})
     assert first.status_code == 200
+    # 03-01 sits behind the progression gate; this test is about isolation, not
+    # about unlocking, so open it explicitly.
+    client.post("/api/courses/dsa/modules/03/unlock")
     client.post("/api/submit", json={
         "problemId": "03-01", "language": "python",
         "source": "def reverse_string(s):\n    return s[::-1]\n", "mode": "test"})
@@ -261,14 +264,14 @@ def test_unknown_language_is_rejected(account):
     assert "unknown language" in res.json()["detail"]
 
 
-def test_a_python_only_problem_refuses_another_language(account):
+def test_a_python_only_problem_refuses_another_language(open_account):
     """
     04-01's test drives a class through method calls, so it cannot be serialised.
 
     Grading it in TypeScript would mean grading nothing, and reporting a pass
     would be worse than refusing.
     """
-    client, _, _ = account
+    client, _, _ = open_account
     res = client.post("/api/submit", json={
         "problemId": "04-01", "language": "typescript",
         "source": "export class Stack {}\n", "mode": "test"})
