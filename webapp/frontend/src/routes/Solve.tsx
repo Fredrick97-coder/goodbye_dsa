@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Group, Panel, Separator } from "react-resizable-panels";
+import { Confetti } from "../components/Confetti";
 import { Editor } from "../components/Editor";
 import { NotesTab } from "../components/NotesTab";
 import { ProblemList } from "../components/ProblemList";
@@ -33,6 +34,8 @@ export default function Solve() {
   const [leftTab, setLeftTab] = useState<LeftTab>("description");
   const [bottomTab, setBottomTab] = useState<"results" | "console">("results");
   const [historyKey, setHistoryKey] = useState(0);
+  /** Bumped on every accepted submission, so re-solving fires it again. */
+  const [celebrate, setCelebrate] = useState(0);
 
   const language: Language | undefined = useMemo(
     () => meta?.languages.find((l) => l.id === langId), [meta, langId],
@@ -47,6 +50,7 @@ export default function Solve() {
     setRunError(null);
     setLoadError(null);
     setLeftTab("description");
+    setCelebrate(0);
     void (async () => {
       try {
         const detail = await api.problem(id);
@@ -97,6 +101,7 @@ export default function Solve() {
         // answer must not un-solve a problem -- the server would still report
         // it solved, so downgrading here would just disagree with the API.
         const accepted = result.summary.verdict === "accepted";
+        if (accepted) setCelebrate((n) => n + 1);
         patch(problem.id, {
           attempts: (summary?.attempts ?? 0) + 1,
           status: accepted ? "solved"
@@ -193,6 +198,12 @@ export default function Solve() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* The key restarts the animation on a second accepted submission; without
+          it React would reuse the finished instance and nothing would play. */}
+      {celebrate > 0 && (
+        <Confetti key={celebrate} onDone={() => setCelebrate(0)} />
+      )}
+
       {/* -------------------------------------------------- problem toolbar */}
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-white/[.06]
                       bg-ink-900/60 px-3">
