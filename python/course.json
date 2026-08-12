@@ -18,6 +18,12 @@
   "examplesFile": "examples.py",
   "exercisesFile": "exercise.py",
   "projectFile": "project.py",
+  "progression": {
+    "enabled": true,
+    "requireLessons": 1.0,
+    "requireProblems": 0.4,
+    "note": "A module opens when the previous one's lessons are all read and 40% of its problems are solved. 'Unlock anyway' always overrides."
+  },
   "modules": [
     {
       "id": "01",

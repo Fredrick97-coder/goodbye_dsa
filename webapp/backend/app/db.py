@@ -338,6 +338,20 @@ MIGRATIONS: List[Tuple[int, str, str]] = [
         CREATE INDEX IF NOT EXISTS ix_lesson_progress_user
             ON lesson_progress (user_id, course_id, completed_at);
     """),
+
+    (6, "explicit module unlocks, so progression is never a dead end", """
+        -- Records a learner choosing to skip ahead. Without this the gate has no
+        -- escape hatch, and one Hard problem could wall someone out of the rest
+        -- of the course.
+        CREATE TABLE IF NOT EXISTS module_unlocks (
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            course_id   TEXT NOT NULL,
+            module_id   TEXT NOT NULL,
+            unlocked_at REAL NOT NULL,
+            reason      TEXT NOT NULL DEFAULT 'skipped',
+            PRIMARY KEY (user_id, course_id, module_id)
+        );
+    """),
 ]
 
 SCHEMA_VERSION = max(version for version, _, _ in MIGRATIONS)

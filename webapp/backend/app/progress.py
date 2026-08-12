@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from . import content, repo, store
+from .settings import settings
+
+from . import content, progression, repo, store
 
 DIFFICULTIES = ["Easy", "Medium", "Hard", "Challenge"]
 
@@ -32,12 +34,15 @@ def decorate(items: List[Dict[str, Any]],
     bookmarks or notes, which is exactly what an anonymous visitor should see.
     Four queries become zero.
     """
+    locks = _lock_index(user_id)
     if user_id is None:
         for item in items:
             item["status"] = "todo"
             item["attempts"] = 0
             item["bookmarked"] = False
             item["hasNote"] = False
+            item["lockedReason"] = locks.get(item["id"].split("-")[0])
+            item["locked"] = item["lockedReason"] is not None
         return items
 
     status = store.statuses(user_id)
@@ -50,7 +55,30 @@ def decorate(items: List[Dict[str, Any]],
         item["attempts"] = attempts.get(pid, 0)
         item["bookmarked"] = pid in marked
         item["hasNote"] = pid in noted
+        item["lockedReason"] = locks.get(pid.split("-")[0])
+        item["locked"] = item["lockedReason"] is not None
     return items
+
+
+def _lock_index(user_id: Optional[str]) -> Dict[str, Optional[str]]:
+    """
+    module id -> why it is locked, computed once for the whole list.
+
+    Asking per problem would recompute the whole course's lock state 342 times
+    for one render of the problem set.
+    """
+    if not settings.progression:
+        return {}
+    out: Dict[str, Optional[str]] = {}
+    for course in content.all_courses():
+        if course.language != "python":
+            continue
+        states = progression.compute(course, user_id)
+        for module_id, state in states.items():
+            if not state.unlocked:
+                out[module_id] = progression.locked_reason(
+                    course, module_id, user_id)
+    return out
 
 
 def overview(user_id: str) -> Dict[str, Any]:

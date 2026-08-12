@@ -135,6 +135,28 @@ def last_lesson_read(user: str, course_id: str) -> Optional[Dict[str, Any]]:
     return {"lessonId": row["lesson_id"], "at": row["completed_at"]}
 
 
+def granted_modules(user: str, course_id: str) -> set:
+    """Modules this user has explicitly unlocked."""
+    rows = db.query_all(
+        "SELECT module_id FROM module_unlocks WHERE user_id = ? AND course_id = ?",
+        (user, course_id))
+    return {r["module_id"] for r in rows}
+
+
+def grant_module(user: str, course_id: str, module_id: str,
+                 reason: str = "skipped") -> None:
+    db.execute(
+        "INSERT INTO module_unlocks (user_id, course_id, module_id, "
+        "unlocked_at, reason) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(user_id, course_id, module_id) DO NOTHING",
+        (user, course_id, module_id, time.time(), reason))
+
+
+def revoke_module(user: str, course_id: str, module_id: str) -> None:
+    db.execute("DELETE FROM module_unlocks WHERE user_id = ? AND course_id = ? "
+               "AND module_id = ?", (user, course_id, module_id))
+
+
 # ------------------------------------------------------------- preferences
 
 #: What a client is allowed to set, and how each value is checked. A preference

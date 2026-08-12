@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from . import auth, content, progress, repo, store
+from . import auth, content, progress, progression, repo, store
 from .execute import run_submission
 from .settings import settings
 
@@ -97,7 +97,9 @@ def get_course(course_id: str,
     if course is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no course {course_id}")
 
+    uid = user["id"] if user else None
     done = _progress(user, course_id)
+    states = progression.compute(course, uid)
     data = course.as_dict(with_modules=False)
     modules = []
     for module in course.modules:
@@ -108,22 +110,33 @@ def get_course(course_id: str,
         practice = _module_practice(course, module.id, user)
         entry["problemTotal"] = practice["total"]
         entry["problemsSolved"] = practice["solved"]
+        state = states.get(module.id)
+        entry["unlocked"] = state.unlocked if state else True
+        entry["lockedReason"] = (None if not state or state.unlocked
+                                else progression.locked_reason(
+                                    course, module.id, uid))
         modules.append(entry)
     data["modules"] = modules
     data["lessonsRead"] = len(done)
-    data["resume"] = _resume(course, done)
+    data["resume"] = _resume(course, done, states)
+    data["progression"] = progression.summary(course, uid)
     return data
 
 
-def _resume(course: content.Course, done: Dict[str, float]) -> Optional[Dict[str, Any]]:
+def _resume(course: content.Course, done: Dict[str, float],
+            states: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """
-    The next unread lesson in course order.
+    The next unread lesson in course order, skipping anything locked.
 
     Deliberately "next unread" rather than "last read": the useful action is
     the one you have not done, and pointing at a lesson already marked complete
-    would be a dead end.
+    would be a dead end -- as would pointing at one behind a lock.
     """
     for module in course.modules:
+        if states is not None:
+            state = states.get(module.id)
+            if state is not None and not state.unlocked:
+                continue
         for lesson in module.lessons:
             if f"{module.id}/{lesson.slug}" not in done:
                 return {"moduleId": module.id, "moduleTitle": module.title,
@@ -142,8 +155,28 @@ def get_module(course_id: str, module_id: str,
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             f"no module {module_id} in {course_id}")
 
+    uid = user["id"] if user else None
+    states = progression.compute(course, uid)
+    state = states.get(module_id)
     done = _progress(user, course_id)
     data = module.as_dict(with_lessons=True)
+    data["unlocked"] = state.unlocked if state else True
+    data["lockedReason"] = (None if not state or state.unlocked
+                            else progression.locked_reason(course, module_id, uid))
+    if not data["unlocked"]:
+        # The lesson list and the problems are withheld: a locked module shows
+        # what it costs to open, not its contents.
+        data["lessons"] = []
+        data["practice"] = []
+        data["problemTotal"] = 0
+        data["problemsSolved"] = 0
+        index = [m.id for m in course.modules].index(module_id)
+        data["prevModule"] = course.modules[index - 1].id if index > 0 else None
+        data["nextModule"] = None
+        data["courseId"] = course_id
+        data["courseTitle"] = course.title
+        data["lessonsRead"] = 0
+        return data
     for lesson in data["lessons"]:
         lesson["completed"] = f"{module_id}/{lesson['slug']}" in done
     data["lessonsRead"] = sum(1 for l in data["lessons"] if l["completed"])
@@ -172,6 +205,14 @@ def get_lesson(course_id: str, module_id: str, slug: str,
 
     course = content.get(course_id)
     module = course.module(module_id)
+    uid = user["id"] if user else None
+
+    locked = progression.locked_reason(course, module_id, uid)
+    if locked:
+        # 423 rather than 403: the resource exists and will become available.
+        raise HTTPException(status.HTTP_423_LOCKED,
+                            f"this lesson is locked -- {locked}")
+
     done = _progress(user, course_id)
 
     data = lesson.as_dict(with_body=True)
@@ -193,6 +234,11 @@ def mark_lesson(course_id: str, module_id: str, slug: str, req: DoneRequest,
     auth.check_origin(request)
     if content.lesson(course_id, module_id, slug) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no lesson {slug}")
+    locked = progression.locked_reason(content.get(course_id), module_id,
+                                       user["id"])
+    if locked:
+        raise HTTPException(status.HTTP_423_LOCKED,
+                            f"this lesson is locked -- {locked}")
     store.set_lesson_done(user["id"], course_id, f"{module_id}/{slug}", req.done)
     done = store.completed_lessons(user["id"], course_id)
     course = content.get(course_id)
@@ -203,6 +249,27 @@ def mark_lesson(course_id: str, module_id: str, slug: str, req: DoneRequest,
                                  if f"{module_id}/{l.slug}" in done),
         "courseLessonsRead": len(done),
     }
+
+
+@router.post("/{course_id}/modules/{module_id}/unlock")
+def unlock_module(course_id: str, module_id: str, request: Request,
+                  user: Dict[str, Any] = Depends(auth.current_user),
+                  ) -> Dict[str, Any]:
+    """
+    Skip ahead. Recorded, and never refused.
+
+    This is what keeps the gate from being a cage: someone who already knows
+    arrays should not have to prove it, and one Hard problem must not wall
+    somebody out of the remaining nineteen modules. The choice is theirs.
+    """
+    auth.check_origin(request)
+    course = content.get(course_id)
+    if course is None or course.module(module_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            f"no module {module_id} in {course_id}")
+    store.grant_module(user["id"], course_id, module_id, reason="skipped")
+    return {"unlocked": True, "moduleId": module_id,
+            "progression": progression.summary(course, user["id"])}
 
 
 @router.post("/{course_id}/modules/{module_id}/examples")
@@ -220,6 +287,12 @@ def run_examples(course_id: str, module_id: str, request: Request,
     is what keeps the concurrency cap meaningful.
     """
     auth.check_origin(request)
+    locked = progression.locked_reason(content.get(course_id), module_id,
+                                       user["id"])
+    if locked:
+        raise HTTPException(status.HTTP_423_LOCKED,
+                            f"this module is locked -- {locked}")
+
     directory = content.module_path(course_id, module_id)
     if directory is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,

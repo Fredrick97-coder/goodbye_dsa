@@ -36,7 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from . import (auth, content, courses_api, db, executors, languages,
-               progress, repo, settings as config, store)
+               progress, progression, repo, settings as config, store)
 from .execute import run_submission
 from .observability import (BodyLimitMiddleware, RequestContextMiddleware,
                             SecurityHeadersMiddleware, configure_logging,
@@ -433,6 +433,9 @@ def problem(problem_id: str,
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             f"no problem {problem_id}")
     detail.update(repo.neighbors(problem_id))
+    detail["lockedReason"] = progression.problem_locked(
+        problem_id, user["id"] if user else None)
+    detail["locked"] = detail["lockedReason"] is not None
     uid = user["id"] if user else None
     progress.decorate([detail], uid)
     detail["submissionCount"] = (
@@ -477,6 +480,14 @@ def submit(req: SubmitRequest, request: Request,
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             f"no problem {req.problemId}")
+
+    # Enforced here, not just hidden in the UI. A lock that only exists in the
+    # client is decoration -- anyone can POST.
+    locked = progression.problem_locked(req.problemId,
+                                        user["id"] if user else None)
+    if locked and req.mode == "test":
+        raise HTTPException(status.HTTP_423_LOCKED,
+                            f"this problem is locked -- {locked}")
 
     # Non-Python drivers cannot run the Python specs, so they are handed the
     # serialised plan instead. Python loads the specs itself and ignores it.

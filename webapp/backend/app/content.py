@@ -113,6 +113,9 @@ class Course:
     levels: List[str]
     modules: List[Module]
     practice_languages: List[str] = field(default_factory=list)
+    #: Unlock rule from the manifest; see progression.py. A course decides how
+    #: strict it is, because that is a property of the course, not the platform.
+    progression: Dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self, with_modules: bool = True) -> Dict[str, Any]:
         data = {
@@ -303,6 +306,7 @@ def _load_course(manifest_path: Path) -> Course:
         levels=manifest.get("levels", []),
         modules=modules,
         practice_languages=manifest.get("practiceLanguages", []),
+        progression=manifest.get("progression", {}) or {},
     )
 
 

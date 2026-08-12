@@ -193,6 +193,8 @@ class Settings:
     #: Where course directories live. Each contains a course.json manifest, so a
     #: second course is a directory rather than a code change.
     courses_root: Path
+    #: Progressive unlocking. Off means every module, lesson and problem is open.
+    progression: bool
 
     # Filled in by resolve_executor() once the platform is known.
     resolved_executor: str = field(default="", compare=False)
@@ -297,6 +299,7 @@ def _load() -> Settings:
 
         python_root=Path(_env("PYTHON_ROOT", str(REPO_ROOT / "python"))),
         courses_root=Path(_env("COURSES_ROOT", str(REPO_ROOT))),
+        progression=_flag("PROGRESSION", True),
     )
 
 
@@ -411,6 +414,7 @@ def summary() -> dict:
             "maxConcurrent": settings.exec_max_concurrent,
         },
         "coursesRoot": str(settings.courses_root),
+        "progression": settings.progression,
         "python": sys.version.split()[0],
         "platform": platform.system(),
     }
