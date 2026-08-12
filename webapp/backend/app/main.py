@@ -63,9 +63,8 @@ async def lifespan(app: FastAPI):
         log.debug("  executor %-8s %-11s %s", name,
                   "available" if reasons[name] else "unavailable",
                   reasons[f"{name}_reason"])
-    if not executors.is_safe(resolved):
-        log.warning("submissions run WITHOUT a sandbox (%s): fine for local "
-                    "development, never for a deployment", resolved)
+    for problem in config.warnings_for(resolved):
+        log.warning("configuration: %s", problem)
 
     purged = store.purge_expired_sessions()
     if purged:
@@ -282,6 +281,7 @@ def health() -> Dict[str, Any]:
         "config": config.summary(),
         "db": db.stats(),
         "executorSafe": executors.is_safe(settings.resolved_executor or "local"),
+        "warnings": config.warnings_for(settings.resolved_executor or "local"),
         "pythonRoot": str(repo.PYTHON_ROOT),
     }
     if not ok:

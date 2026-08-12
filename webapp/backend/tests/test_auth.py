@@ -40,6 +40,7 @@ def test_production_uses_a_memory_hard_parameter(monkeypatch, tmp_path):
     """Tests lower this for speed; the default must stay expensive."""
     import importlib
     import sys
+    monkeypatch.setenv("FORGE_SKIP_DOTENV", "1")
     monkeypatch.delenv("FORGE_SCRYPT_N", raising=False)
     monkeypatch.setenv("FORGE_DB_PATH", str(tmp_path / "d.db"))
     for name in [n for n in list(sys.modules) if n.startswith("app")]:
@@ -250,6 +251,7 @@ def test_forwarded_headers_are_ignored_unless_trusted(database, env):
 def test_forwarded_headers_are_used_when_trusted(monkeypatch, tmp_path):
     import importlib
     import sys
+    monkeypatch.setenv("FORGE_SKIP_DOTENV", "1")
     monkeypatch.setenv("FORGE_DB_PATH", str(tmp_path / "d.db"))
     monkeypatch.setenv("FORGE_TRUST_PROXY_HEADERS", "1")
     monkeypatch.setenv("FORGE_SCRYPT_N", str(2 ** 12))

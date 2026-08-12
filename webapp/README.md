@@ -266,8 +266,14 @@ click is never wasted.
 ## Configuration
 
 Everything is environment variables prefixed `FORGE_`, read once at startup.
-`backend/.env.example` documents every one with its default; there is no config
-file to forget to copy.
+`backend/.env.example` documents every one with its default.
+
+`backend/.env` is read automatically if present, and **real environment
+variables win over it** — a container or systemd unit setting `FORGE_DB_PATH`
+must not be overridden by a stale file baked into an image. It is gitignored;
+`.env.example` is the tracked template. (`FORGE_SKIP_DOTENV=1` ignores it
+entirely, which is what the test suite does so its results never depend on an
+untracked local file.)
 
 Two settings have no safe default and are therefore **required in production**:
 
@@ -277,6 +283,11 @@ Two settings have no safe default and are therefore **required in production**:
 
 Values are validated at import, so a typo is a startup failure with a message
 rather than a subtly wrong runtime. `FORGE_SESSION_DAYS=forever` will not boot.
+
+Settings that are legal but probably a mistake are logged at startup and
+returned by `/api/health` under `warnings` — chiefly
+`FORGE_TRUST_PROXY_HEADERS=1` with no proxy in front, which makes the login rate
+limit bypassable by rotating `X-Forwarded-For`.
 
 ## Running it for real
 

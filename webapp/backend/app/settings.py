@@ -30,6 +30,44 @@ _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 
 
+def _load_dotenv() -> None:
+    """
+    Read `backend/.env` into the environment, if it exists.
+
+    Shipping a `.env.example` while nothing read `.env` was a trap: the file
+    looked like configuration and was silently ignored, so a setting you thought
+    you had changed had not changed at all.
+
+    Real environment variables win over the file. That ordering matters -- a
+    container or systemd unit setting `FORGE_DB_PATH` must not be overridden by a
+    stale `.env` that happens to be in the image.
+    """
+    # Tests must not read the developer's .env: a suite whose result depends on
+    # an untracked local file is not a suite you can trust.
+    if os.environ.get("FORGE_SKIP_DOTENV"):
+        return
+    path = Path(__file__).resolve().parents[1] / ".env"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        # Strip one layer of matching quotes, so `X="a b"` means `a b`.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
+
+
 class ConfigError(RuntimeError):
     """Raised at import time for a configuration that cannot be honoured."""
 
@@ -316,6 +354,31 @@ def check_safety(resolved: str) -> None:
         f"Set FORGE_EXECUTOR=docker (with a reachable daemon and the runner "
         f"image built), or set FORGE_ALLOW_UNSAFE_EXECUTOR=1 if you genuinely "
         f"accept that risk.")
+
+
+def warnings_for(resolved: str) -> List[str]:
+    """
+    Configuration that is legal but probably a mistake.
+
+    Logged at startup and returned by /api/health. `trust_proxy_headers` is the
+    important one: with no proxy in front, `X-Forwarded-For` is attacker
+    controlled, so trusting it turns the login rate limit into a formality --
+    rotating the header per attempt never trips it.
+    """
+    out: List[str] = []
+    if settings.trust_proxy_headers:
+        out.append(
+            "FORGE_TRUST_PROXY_HEADERS=1: X-Forwarded-For is trusted. Only "
+            "correct behind a proxy that OVERWRITES that header -- otherwise "
+            "the login rate limit can be bypassed by rotating it.")
+    if resolved not in SAFE_EXECUTORS:
+        out.append(
+            f"the {resolved!r} executor runs submitted code with this "
+            f"process's own filesystem access; it is not a sandbox.")
+    if settings.is_prod and settings.debug:
+        out.append("FORGE_DEBUG is on in production: error responses will "
+                   "include exception text.")
+    return out
 
 
 def summary() -> dict:

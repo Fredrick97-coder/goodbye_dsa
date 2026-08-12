@@ -29,6 +29,7 @@ if str(BACKEND) not in sys.path:
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
     """A fresh, isolated app configuration. Returns the settings module."""
+    monkeypatch.setenv("FORGE_SKIP_DOTENV", "1")
     monkeypatch.setenv("FORGE_ENV", "dev")
     monkeypatch.setenv("FORGE_DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("FORGE_SCRYPT_N", str(2 ** 12))

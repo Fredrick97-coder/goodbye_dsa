@@ -9,6 +9,7 @@ import pytest
 
 
 def _reload(monkeypatch, **env):
+    monkeypatch.setenv("FORGE_SKIP_DOTENV", "1")
     for key, value in env.items():
         monkeypatch.setenv(f"FORGE_{key}", value)
     for name in [n for n in list(sys.modules) if n.startswith("app")]:
