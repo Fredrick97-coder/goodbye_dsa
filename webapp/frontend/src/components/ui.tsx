@@ -98,6 +98,7 @@ export function Icon({ name, className = "w-4 h-4" }: { name: string; className?
     code: <path d="m9 8-4 4 4 4m6-8 4 4-4 4" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />,
     book: <path d="M4 4.5h6a2.5 2.5 0 0 1 2 2.2 2.5 2.5 0 0 1 2-2.2h6v13h-6a2.5 2.5 0 0 0-2 2 2.5 2.5 0 0 0-2-2H4z" strokeWidth="1.7" fill="none" strokeLinejoin="round" />,
     copy: <><rect x="9" y="9" width="11" height="11" rx="2.5" strokeWidth="1.8" fill="none" /><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3H6.5A2.5 2.5 0 0 0 4 5.5v6A2.5 2.5 0 0 0 6.5 14" strokeWidth="1.8" fill="none" strokeLinecap="round" /></>,
+    lock: <><rect x="4.5" y="10.5" width="15" height="10" rx="2.5" strokeWidth="1.8" fill="none" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" strokeWidth="1.8" fill="none" strokeLinecap="round" /></>,
     trophy: <path d="M8 4h8v4a4 4 0 0 1-8 0zM8 5H5v1.5A3.5 3.5 0 0 0 8 10M16 5h3v1.5A3.5 3.5 0 0 1 16 10M12 12v4m-3.5 4h7" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />,
   };
   return (

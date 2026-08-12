@@ -70,6 +70,9 @@ export interface ProblemSummary {
   portable: boolean;
   /** Languages that can grade THIS problem. Python is always present. */
   languages: string[];
+  /** Progressive unlocking: locked until its module opens. */
+  locked: boolean;
+  lockedReason: string | null;
   status: ProblemState;
   attempts: number;
   bookmarked: boolean;
@@ -250,6 +253,8 @@ export interface ModuleSummary {
   lessonsRead: number;
   problemTotal: number;
   problemsSolved: number;
+  unlocked: boolean;
+  lockedReason: string | null;
 }
 
 export interface ModuleDetail extends ModuleSummary {
@@ -277,8 +282,16 @@ export interface CourseSummary {
   problemsSolved?: number;
 }
 
+export interface Progression {
+  enabled: boolean;
+  rule: { requireLessons: number; requireProblems: number };
+  modulesUnlocked: number;
+  moduleCount: number;
+}
+
 export interface CourseDetail extends CourseSummary {
   modules: ModuleSummary[];
+  progression: Progression;
   resume: {
     moduleId: string; moduleTitle: string; slug: string;
     title: string; ordinal: number; minutes: number;

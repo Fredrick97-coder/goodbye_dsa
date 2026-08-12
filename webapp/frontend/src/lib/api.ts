@@ -179,6 +179,10 @@ export const api = {
       `/courses/${courseId}/modules/${moduleId}/lessons/${slug}/done`,
       json({ done })),
 
+  unlockModule: (courseId: string, moduleId: string) =>
+    req<{ unlocked: boolean; moduleId: string }>(
+      `/courses/${courseId}/modules/${moduleId}/unlock`, { method: "POST" }),
+
   runExamples: (courseId: string, moduleId: string) =>
     req<{ stdout: string; elapsedMs: number; executor: string;
           error: string | null }>(

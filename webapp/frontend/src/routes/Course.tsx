@@ -17,27 +17,39 @@ function ModuleRow({ courseId, module: m, signedIn }: {
   courseId: string; module: ModuleSummary; signedIn: boolean;
 }) {
   const readAll = m.lessonsRead === m.lessonCount && m.lessonCount > 0;
+  const locked = m.unlocked === false;
   return (
     <Link
       to={`/learn/${courseId}/${m.id}`}
-      className="group grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-4
+      title={locked ? m.lockedReason ?? "locked" : undefined}
+      className={`group grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-4
                  border-b border-white/[.04] px-5 py-3.5 transition-colors
-                 hover:bg-white/[.025] sm:grid-cols-[34px_minmax(0,1fr)_130px_96px]"
+                 sm:grid-cols-[34px_minmax(0,1fr)_130px_96px] ${
+        locked ? "hover:bg-white/[.015]" : "hover:bg-white/[.025]"}`}
     >
       <span className={`grid h-7 w-7 place-items-center rounded-lg font-mono text-[11px] ${
-        readAll ? "bg-mint-500/15 text-mint-400" : "bg-ink-800 text-mist-400"}`}>
-        {readAll ? <Icon name="check" className="h-3.5 w-3.5" /> : m.id}
+        locked ? "bg-ink-850 text-ink-500"
+        : readAll ? "bg-mint-500/15 text-mint-400" : "bg-ink-800 text-mist-400"}`}>
+        {locked ? <Icon name="lock" className="h-3.5 w-3.5" />
+          : readAll ? <Icon name="check" className="h-3.5 w-3.5" /> : m.id}
       </span>
 
       <div className="min-w-0">
-        <p className="truncate text-[13.5px] font-medium text-mist-100 group-hover:text-white">
+        <p className={`truncate text-[13.5px] font-medium ${
+          locked ? "text-mist-400" : "text-mist-100 group-hover:text-white"}`}>
           {m.title}
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px] text-mist-400">
-          <span>{m.lessonCount} lessons</span>
-          <span>{m.minutes} min</span>
-          {m.problemTotal > 0 && <span>{m.problemTotal} problems</span>}
-          {m.hasProject && <span className="text-volt-300/70">project</span>}
+          {locked ? (
+            <span className="truncate text-amber-400/80">{m.lockedReason}</span>
+          ) : (
+            <>
+              <span>{m.lessonCount} lessons</span>
+              <span>{m.minutes} min</span>
+              {m.problemTotal > 0 && <span>{m.problemTotal} problems</span>}
+              {m.hasProject && <span className="text-volt-300/70">project</span>}
+            </>
+          )}
         </p>
       </div>
 
@@ -120,6 +132,23 @@ export default function Course() {
             </span>
           )}
         </div>
+
+        {course.progression?.enabled && user && (
+          <p className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border
+                        border-white/[.06] bg-ink-850/40 px-4 py-2.5 text-[11.5px]
+                        text-mist-400">
+            <Icon name="lock" className="h-3.5 w-3.5 text-amber-400/80" />
+            <span>
+              <span className="font-mono text-mist-200">
+                {course.progression.modulesUnlocked}/{course.progression.moduleCount}
+              </span>{" "}
+              modules open. The next opens when you have read this one's lessons
+              and solved{" "}
+              {Math.round(course.progression.rule.requireProblems * 100)}% of its
+              problems — or unlock it anyway from the module page.
+            </span>
+          </p>
+        )}
 
         {course.resume && (
           <Link

@@ -30,6 +30,7 @@ function useFilters() {
     status: params.get("status"),
     tested: params.get("tested") === "1",
     starred: params.get("starred") === "1",
+    open: params.get("open") === "1",
     set,
     clear: () => setParams(new URLSearchParams(), { replace: true }),
     active: [...params.keys()].length,
@@ -57,12 +58,20 @@ function Row({ p, onStar }: { p: ProblemSummary; onStar: () => void }) {
     <div className="group grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 border-b
                     border-white/[.035] px-3 py-2 transition-colors hover:bg-white/[.025]
                     sm:grid-cols-[28px_minmax(0,1fr)_130px_92px_58px_54px_36px]">
-      <StateMark state={p.status} />
+      {p.locked
+        ? <span title={p.lockedReason ?? "locked"}
+                className="grid h-5 w-5 place-items-center rounded-full bg-ink-850">
+            <Icon name="lock" className="h-3 w-3 text-ink-500" />
+          </span>
+        : <StateMark state={p.status} />}
 
       <div className="min-w-0">
         <Link to={`/problems/${p.id}`}
-              className="flex items-baseline gap-2 truncate text-[13px] font-medium text-mist-100
-                         transition-colors hover:text-volt-300">
+              title={p.locked ? p.lockedReason ?? undefined : undefined}
+              className={`flex items-baseline gap-2 truncate text-[13px] font-medium
+                          transition-colors ${
+                p.locked ? "text-mist-400 hover:text-mist-300"
+                         : "text-mist-100 hover:text-volt-300"}`}>
           <span className="font-mono text-[11px] text-mist-400">{p.id}</span>
           <span className="truncate">{p.title}</span>
         </Link>
@@ -130,8 +139,11 @@ export default function Problems() {
       && (!f.topic || p.topic === Number(f.topic))
       && (!f.status || p.status === f.status)
       && (!f.tested || p.tested)
-      && (!f.starred || p.bookmarked));
-  }, [problems, f.q, f.difficulty, f.topic, f.status, f.tested, f.starred]);
+      && (!f.starred || p.bookmarked)
+      && (!f.open || !p.locked));
+  }, [problems, f.q, f.difficulty, f.topic, f.status, f.tested, f.starred, f.open]);
+
+  const lockedCount = problems.filter((p) => p.locked).length;
 
   const solvedHere = filtered.filter((p) => p.status === "solved").length;
 
@@ -219,6 +231,12 @@ export default function Problems() {
             <Pill active={f.tested} onClick={() => f.set("tested", f.tested ? null : "1")} tone="bg-sky-500">
               <Icon name="flask" className="h-3 w-3" /> auto-graded
             </Pill>
+            {user && lockedCount > 0 && (
+              <Pill active={f.open} onClick={() => f.set("open", f.open ? null : "1")}
+                    tone="bg-mint-500">
+                <Icon name="check" className="h-3 w-3" /> unlocked only
+              </Pill>
+            )}
             {user && (
               <Pill active={f.starred} onClick={() => f.set("starred", f.starred ? null : "1")} tone="bg-amber-500">
                 <Icon name="star" className="h-3 w-3" /> bookmarked

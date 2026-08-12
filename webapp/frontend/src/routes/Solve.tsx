@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { Confetti } from "../components/Confetti";
 import { Editor } from "../components/Editor";
+import { LockedPanel } from "../components/LockedPanel";
 import { NotesTab } from "../components/NotesTab";
 import { ProblemList } from "../components/ProblemList";
 import { Results } from "../components/Results";
@@ -231,6 +232,24 @@ export default function Solve() {
         <Spinner className="h-6 w-6 text-volt-400" />
       </div>
     );
+
+  // A locked problem shows the gate instead of the editor. The server refuses a
+  // submission anyway (423), so this is the explanation rather than the defence.
+  if (problem.locked) {
+    return (
+      <div className="scroll-thin h-full overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-5 py-10">
+          <LockedPanel
+            title={`${problem.id} · ${problem.title}`}
+            reason={problem.lockedReason}
+            courseId="dsa"
+            moduleId={problem.id.split("-")[0]}
+            onUnlocked={() => window.location.reload()}
+          />
+        </div>
+      </div>
+    );
+  }
 
   const verdictTone =
     report?.summary.verdict === "accepted" ? "ring-mint-500/40"

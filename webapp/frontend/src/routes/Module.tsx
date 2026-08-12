@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { LockedPanel } from "../components/LockedPanel";
 import { Empty, Icon, Spinner, StateMark } from "../components/ui";
 import { DifficultyText } from "../components/ui";
 import { Markdown } from "../components/Markdown";
@@ -69,6 +70,7 @@ export default function Module() {
   const { user } = useAuth();
   const [module, setModule] = useState<ModuleDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     setModule(null);
@@ -77,12 +79,33 @@ export default function Module() {
       try { setModule(await api.module(courseId, moduleId)); }
       catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     })();
-  }, [courseId, moduleId, user]);
+  }, [courseId, moduleId, user, reloadKey]);
 
   if (error) return <Empty icon="book" title="Could not load that module" hint={error} />;
   if (!module)
     return <div className="grid h-full place-items-center">
       <Spinner className="h-6 w-6 text-volt-400" /></div>;
+
+  if (module.unlocked === false) {
+    return (
+      <div className="scroll-thin h-full overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-5 py-10">
+          <Link to={`/learn/${courseId}`} className="btn-ghost !px-0 text-[12px] text-mist-400">
+            <Icon name="arrowLeft" className="h-3.5 w-3.5" /> {module.courseTitle}
+          </Link>
+          <div className="mt-4">
+            <LockedPanel
+              title={`Module ${module.id}: ${module.title}`}
+              reason={module.lockedReason}
+              courseId={courseId}
+              moduleId={moduleId}
+              onUnlocked={() => setReloadKey((n) => n + 1)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="scroll-thin h-full overflow-y-auto">
