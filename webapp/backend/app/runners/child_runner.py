@@ -92,6 +92,15 @@ def main() -> int:
     topic: int = job["topic"]
     num: int = job["num"]
     mode: str = job.get("mode", "test")        # "test" | "run"
+    max_stdout: int = int(job.get("maxStdoutBytes", 8000))
+
+    def clip(text: str) -> str:
+        """Truncation has to be visible: a demo that stops mid-sentence with no
+        explanation reads as a broken program."""
+        if len(text) <= max_stdout:
+            return text
+        return (text[:max_stdout]
+                + f"\n\n... output truncated at {max_stdout:,} bytes ...")
 
     _apply_limits(job.get("cpuSeconds", 5), job.get("memoryMb", 512))
 
@@ -136,11 +145,11 @@ def main() -> int:
             "text": "",
             "traceback": traceback.format_exc(limit=3),
         }
-        report["stdout"] = stdout_buffer.getvalue()[:8000]
+        report["stdout"] = clip(stdout_buffer.getvalue())
         print(json.dumps(report))
         return 0
 
-    report["stdout"] = stdout_buffer.getvalue()[:8000]
+    report["stdout"] = clip(stdout_buffer.getvalue())
 
     if mode == "run":
         # "Run" just executes the file and shows output -- no grading.

@@ -150,8 +150,17 @@ def slugify(text: str) -> str:
     return text or "section"
 
 
-def _strip_number(title: str) -> str:
-    return re.sub(r"^\s*\d+[.)]\s*", "", title.strip())
+def _clean_title(title: str) -> str:
+    """
+    Display form of a heading: no leading number, no markdown.
+
+    Titles legitimately contain inline code -- "Python's `heapq`" -- and every
+    consumer (lesson list, breadcrumb, page heading, next/prev card) shows them
+    as plain text, so the backticks were rendering literally.
+    """
+    text = re.sub(r"^\s*\d+[.)]\s*", "", title.strip())
+    text = re.sub(r"`([^`]*)`", r"\1", text)
+    return re.sub(r"\*\*([^*]*)\*\*", r"\1", text)
 
 
 def parse_theory(markdown: str) -> tuple:
@@ -173,10 +182,13 @@ def parse_theory(markdown: str) -> tuple:
         if current_title is None:
             return
         body = "\n".join(current).strip("\n")
+        # The source separates sections with a horizontal rule; keeping it would
+        # draw a stray line at the bottom of every lesson, just above the footer.
+        body = re.sub(r"\n\s*-{3,}\s*$", "", body).rstrip()
         prose_words, code_lines = _measure(body)
         lessons.append(Lesson(
             slug=slugify(current_title),
-            title=_strip_number(current_title),
+            title=_clean_title(current_title),
             ordinal=len(lessons) + 1,
             body=body,
             words=prose_words,

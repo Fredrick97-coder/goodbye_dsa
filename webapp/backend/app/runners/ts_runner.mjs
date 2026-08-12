@@ -331,7 +331,12 @@ async function main() {
   }
 
   const limitMs = Math.max(1, Number(job.cpuSeconds) || 5) * 1000;
+  const maxStdout = Number(job.maxStdoutBytes) || 8000;
   const printed = [];
+  // Truncation has to be visible; a silently halved demo reads as a crash.
+  const clip = (text) => text.length <= maxStdout ? text
+    : `${text.slice(0, maxStdout)}\n\n... output truncated at ` +
+      `${maxStdout.toLocaleString()} bytes ...`;
 
   const worker = new Worker(new URL(import.meta.url), {
     workerData: job,
@@ -374,7 +379,7 @@ async function main() {
     });
   });
 
-  const stdout = printed.join("").slice(0, 8000);
+  const stdout = clip(printed.join(""));
   if (done.timedOut) {
     const report = fatal(
       "TimeLimit",

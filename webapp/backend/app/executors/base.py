@@ -58,6 +58,7 @@ class Job:
             "plan": self.plan,
             "cpuSeconds": settings.exec_cpu_seconds,
             "memoryMb": settings.exec_memory_mb,
+            "maxStdoutBytes": settings.exec_max_stdout_bytes,
         })
 
 

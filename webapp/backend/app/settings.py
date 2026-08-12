@@ -174,6 +174,10 @@ class Settings:
     exec_cpu_seconds: int
     exec_memory_mb: int
     exec_max_source_bytes: int
+    #: How much of a run's output is kept. 8 KB silently cut the worked examples
+    #: in half (topic 22 prints 16 KB), and a demo that stops mid-sentence is
+    #: worse than no demo.
+    exec_max_stdout_bytes: int
     exec_max_concurrent: int
     docker_image: str
     docker_binary: str
@@ -281,6 +285,7 @@ def _load() -> Settings:
         exec_cpu_seconds=_int("EXEC_CPU_SECONDS", 5, minimum=1),
         exec_memory_mb=_int("EXEC_MEMORY_MB", 512, minimum=32),
         exec_max_source_bytes=_int("EXEC_MAX_SOURCE_BYTES", 200_000, minimum=256),
+        exec_max_stdout_bytes=_int("EXEC_MAX_STDOUT_BYTES", 65_536, minimum=1024),
         exec_max_concurrent=_int("EXEC_MAX_CONCURRENT", 4, minimum=1, maximum=64),
         docker_image=_env("DOCKER_IMAGE", "forge-runner:latest") or "forge-runner:latest",
         docker_binary=_env("DOCKER_BINARY", "docker") or "docker",
@@ -402,6 +407,7 @@ def summary() -> dict:
             "cpuSeconds": settings.exec_cpu_seconds,
             "memoryMb": settings.exec_memory_mb,
             "maxSourceBytes": settings.exec_max_source_bytes,
+            "maxStdoutBytes": settings.exec_max_stdout_bytes,
             "maxConcurrent": settings.exec_max_concurrent,
         },
         "coursesRoot": str(settings.courses_root),
