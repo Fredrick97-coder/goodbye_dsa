@@ -4,3 +4,9 @@ __pycache__/
 *.pyc
 .venv/
 backend/data/
+
+# Real configuration, which will eventually hold deployment specifics and
+# secrets. `.env.example` is the tracked template; this file is not.
+.env
+.env.*
+!.env.example

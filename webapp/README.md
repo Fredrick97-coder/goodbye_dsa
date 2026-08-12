@@ -66,7 +66,8 @@ cd frontend && npm install
 | **Env-driven configuration, with a prod safety gate** | ✅ |
 | **Structured logs, request ids, error boundary, security headers** | ✅ |
 | **Ops CLI: migrate / backup / vacuum / users / reset-password** | ✅ |
-| **Test suite (102 tests)** | ✅ |
+| **Test suite (103 tests)** | ✅ |
+| **Confetti on an accepted submission** | ✅ lazy-loaded, respects reduced-motion |
 
 ## Honest limitations
 
@@ -393,3 +394,33 @@ coloured ring around the results panel so it reads at a glance.
 
 Layout, colours and fonts are all in `frontend/tailwind.config.js` and
 `frontend/src/index.css`.
+
+### The confetti
+
+An accepted submission fires a Lottie burst from both bottom corners. The
+animation is **generated, not downloaded**:
+
+```bash
+cd frontend && python3 scripts/gen_confetti.py     # -> src/assets/confetti.json
+```
+
+Three reasons it is generated. It uses this app's palette rather than a stock
+asset's, so the celebration looks like part of the product; there is no
+attribution question attached to it; and particle count, gravity, spin and
+duration are parameters at the top of the script, so tuning the feel is editing
+three numbers rather than hunting for a different file. The motion is a sampled
+projectile simulation — expressing gravity through bezier easing would be
+guesswork, whereas sampling a real trajectory looks right because it is.
+
+Both the player (`lottie_light`, 169 KB) and the animation (339 KB, 28 KB
+gzipped) load **only on the first accepted submission** and are cached after
+that, so the initial bundle grows by about 1 KB. It respects
+`prefers-reduced-motion` by not playing at all, and the overlay is
+`pointer-events-none` and destroys itself on completion, so it can never
+intercept a click or leak an animation loop.
+
+*Two things were wrong on the first attempt and are worth not re-introducing: at
+2400 px/s launch speed the apex was ~1900 px above a 900 px canvas, so the
+fastest half of the confetti left the screen and the middle of the animation
+looked empty; and 68 particles across a wide viewport read as "some paper fell"
+rather than a burst. It is now 120 particles that all stay in frame.*
