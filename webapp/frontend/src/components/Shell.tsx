@@ -9,6 +9,7 @@ import { Icon, Spinner } from "./ui";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: "home" },
+  { to: "/learn", label: "Learn", icon: "book" },
   { to: "/problems", label: "Problems", icon: "grid" },
   { to: "/progress", label: "Progress", icon: "chart" },
 ];

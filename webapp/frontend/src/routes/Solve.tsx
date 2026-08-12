@@ -20,11 +20,11 @@ export default function Solve() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { meta, patch, byId } = useAppData();
-  const { user, requireAuth } = useAuth();
+  const { user, requireAuth, preferences, setPreference } = useAuth();
   const owner = draftOwner(user);
 
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
-  const [langId, setLangId] = useState("python");
+  const [langId, setLangId] = useState(preferences.language);
   const [source, setSource] = useState("");
   const [report, setReport] = useState<SubmitReport | null>(null);
   const [running, setRunning] = useState(false);
@@ -40,6 +40,21 @@ export default function Solve() {
   const language: Language | undefined = useMemo(
     () => meta?.languages.find((l) => l.id === langId), [meta, langId],
   );
+
+  /**
+   * The languages offered for THIS problem.
+   *
+   * A problem whose tests drive a class through method calls cannot be graded
+   * outside Python, so the option is disabled with the reason rather than
+   * letting someone write a solution nothing will run.
+   */
+  const offered = useMemo(() => {
+    const allowed = new Set(problem?.languages ?? ["python"]);
+    return (meta?.languages ?? []).map((l) => ({
+      ...l,
+      usable: l.available && allowed.has(l.id),
+    }));
+  }, [meta, problem]);
   const summary = byId.get(id);
 
   /* ------------------------------------------------------ load the problem */
@@ -66,6 +81,32 @@ export default function Solve() {
     // and is handled by the effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  /**
+   * Reconcile the saved preference with what this problem supports.
+   *
+   * The preference is the source of truth and per-problem availability only
+   * filters it. That ordering matters: an earlier version fell back to Python
+   * and left it there, so opening one Python-only problem silently reset the
+   * choice for the rest of the session even though the account still had
+   * TypeScript saved. Deriving from the preference every time means the
+   * fallback is temporary, exactly as long as that problem is on screen.
+   */
+  useEffect(() => {
+    if (!problem) return;
+    const wanted = preferences.language;
+    setLangId(problem.languages.includes(wanted) ? wanted : "python");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problem?.id, preferences.language]);
+
+  /**
+   * An explicit switch, which is the only thing that writes the preference.
+   * The automatic fallback above must never persist.
+   */
+  const chooseLanguage = useCallback((next: string) => {
+    setLangId(next);
+    setPreference("language", next);
+  }, [setPreference]);
 
   /* swap the buffer when the language changes, without refetching */
   useEffect(() => {
@@ -243,13 +284,14 @@ export default function Solve() {
           <div className="relative">
             <select
               value={langId}
-              onChange={(e) => setLangId(e.target.value)}
+              onChange={(e) => chooseLanguage(e.target.value)}
               className="appearance-none rounded-lg border border-white/[.08] bg-ink-850 py-1.5 pl-3 pr-8
                          text-[12px] font-medium text-mist-100 focus:border-volt-500/50 focus:outline-none"
             >
-              {meta.languages.map((l) => (
-                <option key={l.id} value={l.id} disabled={!l.available}>
-                  {l.label}{l.available ? "" : " — soon"}
+              {offered.map((l) => (
+                <option key={l.id} value={l.id} disabled={!l.usable}>
+                  {l.label}
+                  {l.usable ? "" : l.available ? " — Python only here" : " — soon"}
                 </option>
               ))}
             </select>
@@ -337,6 +379,12 @@ export default function Solve() {
                     </span>
                     {!problem.tested && (
                       <span className="chip bg-amber-500/12 text-amber-400">no auto-grading</span>
+                    )}
+                    {problem.tested && problem.languages.length === 1 && (
+                      <span title={problem.languageNotes.join(" · ") || "the tests are Python-specific"}
+                            className="chip bg-sky-500/10 text-sky-400">
+                        Python only
+                      </span>
                     )}
                     <span className="ml-auto hidden font-mono text-[10.5px] text-mist-400 lg:inline">
                       ⌘↵ submit · ⌘' run

@@ -1,8 +1,10 @@
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from "react";
-import { auth as authApi, drafts, setUnauthorizedHandler } from "./api";
-import type { User } from "./types";
+import {
+  auth as authApi, drafts, localPrefs, setUnauthorizedHandler,
+} from "./api";
+import type { Preferences, User } from "./types";
 
 /**
  * Who is signed in, and the one place that changes.
@@ -16,8 +18,18 @@ import type { User } from "./types";
 /** A gated action: what to run once the visitor is signed in. */
 type PendingAction = (() => void) | null;
 
+const DEFAULT_PREFS: Preferences = { language: "python" };
+
 interface AuthState {
   user: User | null;
+  /** Per-account settings; defaults while signed out. */
+  preferences: Preferences;
+  /**
+   * Persist one preference. Signed in it goes to the database, signed out to
+   * localStorage, so the picker behaves the same either way.
+   */
+  setPreference: <K extends keyof Preferences>(
+    key: K, value: Preferences[K]) => void;
   /** Still asking the server who this is. Guards a signed-out flash on reload. */
   loading: boolean;
   modal: "login" | "register" | null;
@@ -39,6 +51,8 @@ const Ctx = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<User | null>(null);
+  const [preferences, setPreferences] = useState<Preferences>(
+    () => ({ ...DEFAULT_PREFS, ...localPrefs.load() }));
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<"login" | "register" | null>(null);
   const [reason, setReason] = useState<string | null>(null);
@@ -49,9 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let alive = true;
     void (async () => {
       try {
-        const { user: me } = await authApi.me();
+        const { user: me, preferences: server } = await authApi.me();
         if (!alive) return;
         setUserState(me);
+        // Only an ACCOUNT's preferences override what is already loaded from
+        // localStorage. Signed out the server just echoes defaults, and taking
+        // those was overwriting the visitor's own choice on every page load.
+        if (me && server) setPreferences({ ...DEFAULT_PREFS, ...server });
         if (me) drafts.adopt(me.id);
       } catch {
         if (alive) setUserState(null);      // API down: treat as signed out
@@ -77,8 +95,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUserState(next);
   }, []);
 
-  const finishAuth = useCallback((next: User) => {
+  /**
+   * Reconcile local and server preferences at sign-in.
+   *
+   * The account wins, except where it has never chosen: someone who picked
+   * TypeScript and *then* signed up should not be dropped back to Python.
+   */
+  const mergePrefs = useCallback(async (server?: Preferences) => {
+    const local = localPrefs.load();
+    const merged: Preferences = { ...DEFAULT_PREFS, ...server };
+    const pushable: Partial<Preferences> = {};
+    for (const key of Object.keys(DEFAULT_PREFS) as (keyof Preferences)[]) {
+      const chosenLocally = local[key];
+      if (chosenLocally && merged[key] === DEFAULT_PREFS[key]
+          && chosenLocally !== merged[key]) {
+        merged[key] = chosenLocally as Preferences[typeof key];
+        pushable[key] = chosenLocally as Preferences[typeof key];
+      }
+    }
+    setPreferences(merged);
+    if (Object.keys(pushable).length > 0) {
+      // Fire and forget: a failure here costs a preference, not the sign-in.
+      try { await authApi.savePreferences(pushable); } catch { /* ignore */ }
+    }
+  }, []);
+
+  const finishAuth = useCallback((next: User, server?: Preferences) => {
     adopt(next);
+    void mergePrefs(server);
     setModal(null);
     setReason(null);
     // Run whatever the visitor was trying to do when they hit the gate. The
@@ -86,25 +130,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const action = pending.current;
     pending.current = null;
     action?.();
-  }, [adopt]);
+  }, [adopt, mergePrefs]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { user: next } = await authApi.login(email, password);
-    finishAuth(next);
+    const { user: next, preferences: server } = await authApi.login(email, password);
+    finishAuth(next, server);
   }, [finishAuth]);
 
   const register = useCallback(async (email: string, password: string,
                                       name?: string) => {
-    const { user: next } = await authApi.register(email, password, name);
-    finishAuth(next);
+    const { user: next, preferences: server } =
+      await authApi.register(email, password, name);
+    finishAuth(next, server);
   }, [finishAuth]);
 
   const logout = useCallback(async () => {
     try { await authApi.logout(); } finally {
       setUserState(null);
       pending.current = null;
+      // The signed-out session keeps the same choice rather than snapping back
+      // to Python, which would look like the app forgetting.
+      localPrefs.save(preferences);
     }
-  }, []);
+  }, [preferences]);
+
+  const setPreference = useCallback(<K extends keyof Preferences>(
+    key: K, value: Preferences[K],
+  ) => {
+    setPreferences((prev) => {
+      if (prev[key] === value) return prev;
+      const next = { ...prev, [key]: value };
+      localPrefs.save(next);
+      return next;
+    });
+    if (user) {
+      // Fire and forget. The UI has already moved; a failed save means the
+      // choice is not remembered next session, which is not worth a dialog.
+      void authApi.savePreferences({ [key]: value } as Partial<Preferences>)
+        .catch(() => {});
+    }
+  }, [user]);
 
   const openModal = useCallback((mode: "login" | "register") => {
     setModal(mode);
@@ -125,10 +190,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const value = useMemo<AuthState>(() => ({
-    user, loading, modal, openModal, closeModal, requireAuth, reason,
-    login, register, logout, setUser: setUserState,
-  }), [user, loading, modal, openModal, closeModal, requireAuth, reason,
-       login, register, logout]);
+    user, preferences, setPreference, loading, modal, openModal, closeModal,
+    requireAuth, reason, login, register, logout, setUser: setUserState,
+  }), [user, preferences, setPreference, loading, modal, openModal, closeModal,
+       requireAuth, reason, login, register, logout]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

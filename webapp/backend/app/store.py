@@ -92,6 +92,100 @@ def user_count() -> int:
         return int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
 
 
+# --------------------------------------------------------- lesson progress
+
+def completed_lessons(user: str, course_id: str) -> Dict[str, float]:
+    """lesson_id -> when it was completed, for one course."""
+    rows = db.query_all(
+        "SELECT lesson_id, completed_at FROM lesson_progress "
+        "WHERE user_id = ? AND course_id = ?", (user, course_id))
+    return {r["lesson_id"]: r["completed_at"] for r in rows}
+
+
+def set_lesson_done(user: str, course_id: str, lesson_id: str,
+                    done: bool) -> bool:
+    """Mark or unmark. Returns the resulting state."""
+    if done:
+        db.execute(
+            "INSERT INTO lesson_progress (user_id, course_id, lesson_id, "
+            "completed_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(user_id, course_id, lesson_id) DO NOTHING",
+            (user, course_id, lesson_id, time.time()))
+    else:
+        db.execute(
+            "DELETE FROM lesson_progress WHERE user_id = ? AND course_id = ? "
+            "AND lesson_id = ?", (user, course_id, lesson_id))
+    return done
+
+
+def lessons_read_count(user: str) -> int:
+    row = db.query_one(
+        "SELECT COUNT(*) AS n FROM lesson_progress WHERE user_id = ?", (user,))
+    return int(row["n"]) if row else 0
+
+
+def last_lesson_read(user: str, course_id: str) -> Optional[Dict[str, Any]]:
+    """The most recently completed lesson, for "continue where you left off"."""
+    row = db.query_one(
+        "SELECT lesson_id, completed_at FROM lesson_progress "
+        "WHERE user_id = ? AND course_id = ? "
+        "ORDER BY completed_at DESC LIMIT 1", (user, course_id))
+    if row is None:
+        return None
+    return {"lessonId": row["lesson_id"], "at": row["completed_at"]}
+
+
+# ------------------------------------------------------------- preferences
+
+#: What a client is allowed to set, and how each value is checked. A preference
+#: that is not here is rejected -- otherwise the table becomes a place for the
+#: browser to store arbitrary strings against a user id.
+def _valid_language(value: str) -> bool:
+    from . import languages
+    lang = languages.get(value)
+    return lang is not None and lang.implemented
+
+
+PREFERENCE_KEYS = {
+    "language": _valid_language,
+}
+
+#: Sent to a signed-out client and used when an account has never chosen.
+PREFERENCE_DEFAULTS = {
+    "language": "python",
+}
+
+
+def preferences(user: str) -> Dict[str, str]:
+    """Every stored preference for this user, defaults filled in."""
+    rows = db.query_all(
+        "SELECT key, value FROM preferences WHERE user_id = ?", (user,))
+    out = dict(PREFERENCE_DEFAULTS)
+    for row in rows:
+        if row["key"] in PREFERENCE_KEYS:
+            out[row["key"]] = row["value"]
+    return out
+
+
+def set_preference(user: str, key: str, value: str) -> None:
+    """
+    Store one preference. The caller must have validated it.
+
+    Upsert rather than delete-then-insert: two tabs saving at once would
+    otherwise race to leave no row at all.
+    """
+    db.execute(
+        "INSERT INTO preferences (user_id, key, value, updated_at) "
+        "VALUES (?,?,?,?) ON CONFLICT(user_id, key) "
+        "DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        (user, key, value, time.time()))
+
+
+def clear_preference(user: str, key: str) -> None:
+    db.execute("DELETE FROM preferences WHERE user_id = ? AND key = ?",
+               (user, key))
+
+
 # ---------------------------------------------------------------- sessions
 
 def create_session(token_hash: str, user_id: str, ttl_seconds: int,

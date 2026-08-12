@@ -55,10 +55,12 @@ cd frontend && npm install
 | **Streaks, activity heatmap, per-topic and per-difficulty progress** | ✅ |
 | **Per-problem notes, autosaved** | ✅ |
 | **Bookmarks, random unsolved problem, prev/next navigation** | ✅ |
+| **Chosen language remembered per account** | ✅ survives reload and re-login |
 | `stdout` capture and a Console tab | ✅ |
 | Drafts autosaved per problem, survive refresh | ✅ (localStorage) |
 | Resizable panels, `⌘↵` submit, `⌘'` run | ✅ |
-| Languages other than Python | ⛔ see below |
+| TypeScript and JavaScript, graded against the same specs | ✅ 232 of 342 problems |
+| Adding a language is a driver + a table row | ✅ see below |
 | **Accounts, with per-user progress** | ✅ (scrypt + server-side sessions) |
 | **Browse and Run without an account; the gate is at Submit** | ✅ |
 | **Sandboxed execution** (container, or macOS Seatbelt locally) | ✅ verified against escape attempts |
@@ -66,18 +68,39 @@ cd frontend && npm install
 | **Env-driven configuration, with a prod safety gate** | ✅ |
 | **Structured logs, request ids, error boundary, security headers** | ✅ |
 | **Ops CLI: migrate / backup / vacuum / users / reset-password** | ✅ |
-| **Test suite (103 tests)** | ✅ |
+| **Test suite (138 tests)** | ✅ |
 | **Confetti on an accepted submission** | ✅ lazy-loaded, respects reduced-motion |
 
 ## Honest limitations
 
-**Only Python executes.** The language dropdown lists all eight languages the
-repo has folders for, but the seven others are visibly disabled rather than
-silently broken. The reason is structural: the reference tests *are* Python —
-they import your function and compare against `math.comb`, `itertools`, or a
-brute-force reference. Supporting Java or C++ means a second test format
-(stdin/stdout fixtures per problem), not just another compiler. The API returns
-a clear `400` explaining this rather than pretending.
+**Three languages run: Python, TypeScript and JavaScript.** The remaining five
+rows in the language table are visibly disabled with the reason, not a "soon".
+
+Coverage is not uniform, and the UI says so per problem:
+
+| | problems |
+|---|---|
+| Python | **340** of 342 |
+| TypeScript / JavaScript | **232** of 342 |
+
+The gap is not laziness — it is what can honestly cross a language boundary. Your
+377 reference specs *are* Python: they call `math.comb`, they drive a `Stack`
+through a sequence of method calls, they build a `TreeNode` out of the learner's
+own class, they check "is this a valid min-heap?" with a Python predicate. For
+232 problems the data is ordinary JSON and the Python reference can compute the
+expected answers ahead of time, so a TypeScript solution is graded against
+*exactly* the same expectations as a Python one. For the other 110 the test is
+inseparable from the language, and the problem is marked **Python only** with the
+specific reason (`the test drives a class through a sequence of method calls`)
+rather than being silently hidden.
+
+A problem is refused rather than partially graded: reporting "8 of 8 passed" when
+two of its functions were never run would be worse than refusing.
+
+*Types are stripped, not checked.* Node runs `.mts` natively, so
+`function f(n: number): string { return n; }` executes happily. That is what
+mainstream judges do, and the starter code says so in a comment instead of
+letting a green tick imply your types are sound.
 
 **Two problems have no auto-grading**, and they are the two that cannot have
 any: `01-10 Complexity Analysis` asks you to analyse a function that is already
@@ -89,11 +112,28 @@ written, and `09-09 LRU Cache` specifies no interface to call. Everything else
 backends exist behind one contract, and `auto` picks the strongest the host can
 provide:
 
-| Backend | Isolation | Verified to block |
+| Backend | Isolation | Verified |
 |---|---|---|
-| `docker` | fresh container per submission: `--network none`, `--read-only`, `--user 65534`, `--cap-drop ALL`, `no-new-privileges`, pids/memory/CPU caps, tmpfs `/tmp` | writing the curriculum mount, network, `$HOME` reads, spawning programs |
-| `seatbelt` | macOS Seatbelt profile, kernel-enforced, on the same process | filesystem writes anywhere, network, `$HOME` reads, `exec` of anything but the interpreter |
+| `docker` | fresh container per submission: `--network none`, `--read-only`, `--user 65534`, `--cap-drop ALL`, `no-new-privileges`, pids/memory/CPU caps, tmpfs `/tmp` | no host filesystem, no network, no DNS; writes to the curriculum mount and to the staged source are refused |
+| `seatbelt` | macOS Seatbelt profile, kernel-enforced, same process | no writes anywhere, no network, no `$HOME` or `/etc` reads, no `exec` |
 | `local` | subprocess with CPU and address-space rlimits — **not a sandbox** | runaway loops and memory bombs only |
+
+The two safe backends have genuinely **different shapes**, and it is worth being
+precise about which:
+
+* **`seatbelt` restricts the host.** The process runs on your filesystem, so the
+  policy has to forbid reads, writes and `exec` there — and it does.
+* **`docker` replaces the world.** Inside the container a submission *can* run
+  the image's own `/bin/ls` and read the image's `/etc/passwd`, and it can write
+  to the 32 MB `noexec` tmpfs. None of that reaches anything of yours: the
+  container holds no host data, has no network, drops every capability and runs
+  as `nobody`. An earlier version of this table claimed docker "blocks spawning
+  programs", which was simply wrong — measured, not assumed.
+
+If you want that gap closed too, a distroless base image removes the binaries
+there are to spawn. It is a base-image swap in `backend/docker/*.Dockerfile`,
+and it buys little against a container that already has no network, no host
+mounts and no capabilities.
 
 `FORGE_ENV=prod` **refuses to start on `local`** unless you set
 `FORGE_ALLOW_UNSAFE_EXECUTOR=1`. A deployment that silently degraded to the
@@ -134,14 +174,18 @@ webapp/
 │   ├── auth.py          scrypt, sessions, rate limiting, the CSRF guard
 │   ├── observability.py logging, request ids, error boundary, headers
 │   ├── cli.py           operational commands
+│   ├── languages.py     the language table: one row per language
+│   ├── codegen.py       renders starter code from a neutral signature
 │   ├── executors/       local | seatbelt | docker, behind one contract
+│   ├── runners/         one driver per language + CONTRACT.md
 │   ├── repo.py          bridge to python/_harness — catalog, specs, starters
 │   ├── progress.py      joins repo (curriculum) with store (what you did)
 │   ├── child_runner.py  runs ONE submission, emits per-case JSON
 │   ├── execute.py       dispatcher: size cap, concurrency cap, backend choice
 │   └── main.py          FastAPI routes and startup order
 ├── backend/docker/      the sandbox image (runner.Dockerfile, build.sh)
-├── backend/tests/       102 tests: db, settings, auth, api, containment
+├── backend/tests/       138 tests: db, settings, auth, api, containment,
+│                        languages, signature inference, codegen, the Node driver
 └── frontend/src/
     ├── lib/{api,types,format}.ts, app-data.tsx   one fetch, shared by all pages
     ├── lib/auth.tsx      who is signed in, and the requireAuth gate
@@ -347,7 +391,7 @@ rollout fails its health check instead of serving errors.
 ## Tests
 
 ```bash
-cd backend && python3 -m pytest tests -q        # 102 tests, ~30s
+cd backend && python3 -m pytest tests -q        # 138 tests, ~35s
 ```
 
 Each test gets its own database file and its own reloaded configuration, so they
@@ -360,6 +404,68 @@ mount, open a socket, read `$HOME`, and spawn `/bin/ls` — against every sandbo
 the host offers. They *skip with a stated reason* when a backend is unavailable
 rather than passing quietly, so "all green" can never hide "the sandbox was never
 exercised".
+
+## Preferences
+
+The chosen language is stored per account (`preferences` table, migration 4) and
+arrives with `/api/auth/me`, so the app boots already knowing it — no second
+round trip and no flash of the wrong language.
+
+Three rules make it behave the way people expect:
+
+* **The preference is the source of truth; per-problem availability only filters
+  it.** Opening a Python-only problem shows Python for as long as that problem is
+  on screen, and does *not* overwrite the saved choice. Getting this backwards
+  meant one Python-only problem silently reset the language for the rest of the
+  session while the account still had TypeScript saved.
+* **Only an explicit switch writes.** The automatic fallback never persists.
+* **Signed out it still works**, in localStorage, and is handed to the account on
+  sign-in *if that account has never chosen* — so picking TypeScript and then
+  signing up does not drop you back to Python.
+
+Values are validated against the same whitelist the submit path uses, so `rust`
+cannot be saved as a preference while it has no driver — the two cannot disagree
+about what is runnable.
+
+Adding a preference is a whitelist entry in `store.PREFERENCE_KEYS`, not a
+migration: the table is key/value for exactly that reason.
+
+## Adding a language
+
+The platform is built the way LeetCode-style judges are: the problem definition,
+the test data and the starter code are language-neutral, and each language brings
+a **driver** plus a **table row**. Three languages currently share two drivers.
+
+Concretely, four separable pieces:
+
+| Piece | Where | Language-specific? |
+|---|---|---|
+| Test data | `python/_harness/fixtures.py` — serialises your specs to JSON | no |
+| Signature | `python/_harness/signature.py` — inferred from that data | no |
+| Starter code | `app/codegen.py` — one renderer | no, driven by the table |
+| Execution | `app/runners/<driver>` + a row in `app/languages.py` | **yes** |
+
+So adding Go looks like this:
+
+1. **Write the driver.** `app/runners/go_runner.go`: read `{source, plan, mode}`
+   as JSON on stdin, call the submitted functions, compare with the four
+   comparison modes, write the report JSON to stdout. The contract, including the
+   `STUB` rule that keeps "not attempted" honest, is in
+   `app/runners/CONTRACT.md`; `ts_runner.mjs` is the reference.
+2. **Fill in the row.** `languages.py` already has Go's type map, list syntax and
+   function shape — it just has `driver=None`. Set the driver, the command and the
+   image.
+3. **Add the image.** A `go-runner.Dockerfile` plus one line in
+   `docker/build.sh`.
+
+You do **not** touch: the API, the frontend, the executors, the specs, or any of
+the 342 problems. Starter code for every portable problem is generated from the
+inferred signature the moment the row is live, which is why enabling JavaScript
+cost one table entry and zero lines of new code.
+
+The type maps are data for exactly this reason — nothing in `codegen.py` branches
+on which language it is rendering, and there is a test that fails if a row cannot
+render every neutral type.
 
 ## If you outgrow SQLite
 

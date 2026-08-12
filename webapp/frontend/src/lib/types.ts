@@ -1,3 +1,8 @@
+/** Per-account settings. Stored server-side; defaults when signed out. */
+export interface Preferences {
+  language: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -19,7 +24,10 @@ export interface Language {
   label: string;
   monaco: string;
   ext: string;
+  runtime: string;
   available: boolean;
+  /** Why it is unavailable, or which runtime satisfied it. */
+  detail: string;
 }
 
 export interface Topic {
@@ -58,6 +66,10 @@ export interface ProblemSummary {
   tested: boolean;
   testCount: number;
   drillable: boolean;
+  /** Can this problem's tests be serialised for a non-Python runner? */
+  portable: boolean;
+  /** Languages that can grade THIS problem. Python is always present. */
+  languages: string[];
   status: ProblemState;
   attempts: number;
   bookmarked: boolean;
@@ -71,6 +83,8 @@ export interface ProblemDetail extends ProblemSummary {
   notes: string[];
   conventions: string[];
   starterCode: Record<string, string>;
+  /** Per-target explanations of why a language is unavailable here. */
+  languageNotes: string[];
   prevId: string | null;
   nextId: string | null;
   submissionCount: number;
@@ -187,4 +201,77 @@ export interface Overview {
     id: string; title: string; difficulty: Difficulty;
     topic: number; topicName: string;
   }[];
+}
+
+
+/* ------------------------------------------------------------------ courses */
+
+export interface LessonSummary {
+  slug: string;
+  title: string;
+  ordinal: number;
+  minutes: number;
+  words: number;
+  codeBlocks: number;
+  codeLines: number;
+  completed?: boolean;
+}
+
+export interface LessonDetail extends LessonSummary {
+  body: string;                 // raw markdown, rendered client-side
+  completed: boolean;
+  courseId: string;
+  courseTitle: string;
+  moduleId: string;
+  moduleTitle: string;
+  moduleLessonCount: number;
+  prev: { moduleId: string; slug: string; title: string } | null;
+  next: { moduleId: string; slug: string; title: string } | null;
+}
+
+export interface ModuleSummary {
+  id: string;
+  title: string;
+  level: string;
+  intro: string;
+  lessonCount: number;
+  minutes: number;
+  hasExamples: boolean;
+  hasProject: boolean;
+  lessonsRead: number;
+  problemTotal: number;
+  problemsSolved: number;
+}
+
+export interface ModuleDetail extends ModuleSummary {
+  lessons: LessonSummary[];
+  practice: ProblemSummary[];
+  courseId: string;
+  courseTitle: string;
+  prevModule: string | null;
+  nextModule: string | null;
+}
+
+export interface CourseSummary {
+  id: string;
+  title: string;
+  subtitle: string;
+  language: string;
+  levels: string[];
+  moduleCount: number;
+  lessonCount: number;
+  minutes: number;
+  practiceLanguages: string[];
+  lessonsRead: number;
+  lessonTotal?: number;
+  problemTotal?: number;
+  problemsSolved?: number;
+}
+
+export interface CourseDetail extends CourseSummary {
+  modules: ModuleSummary[];
+  resume: {
+    moduleId: string; moduleTitle: string; slug: string;
+    title: string; ordinal: number; minutes: number;
+  } | null;
 }

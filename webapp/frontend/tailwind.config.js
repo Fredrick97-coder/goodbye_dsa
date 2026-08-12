@@ -16,7 +16,8 @@ export default {
           600: "#2e3950", 500: "#414f6b", 400: "#5c6b8a",
         },
         mist: { 400: "#7d8ba8", 300: "#9aa7c0", 200: "#c3ccdd", 100: "#e6ebf4" },
-        volt: { 600: "#4c2bd9", 500: "#6d4aff", 400: "#8a6dff", 300: "#a894ff" },
+        volt: { 600: "#4c2bd9", 500: "#6d4aff", 400: "#8a6dff", 300: "#a894ff",
+                200: "#c9bcff" },   // hover tint above 300
         mint: { 500: "#12b981", 400: "#2ed3a0" },
         rose: { 500: "#f2456b", 400: "#ff6b88" },
         amber: { 500: "#f5a524", 400: "#ffbe4d" },

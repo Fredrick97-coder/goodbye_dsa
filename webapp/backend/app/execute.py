@@ -19,7 +19,7 @@ import logging
 import threading
 from typing import Any, Dict
 
-from . import executors
+from . import executors, languages
 from .executors.base import Job, fatal, summarise, to_report      # noqa: F401
 from .settings import settings
 
@@ -32,15 +32,25 @@ _slots = threading.BoundedSemaphore(settings.exec_max_concurrent)
 _ACQUIRE_TIMEOUT = 20.0
 
 
-def run_submission(source: str, topic: int, num: int,
-                   mode: str = "test") -> Dict[str, Any]:
+def run_submission(source: str, topic: int, num: int, mode: str = "test",
+                   language: str = "python",
+                   plan: Dict[str, Any] | None = None) -> Dict[str, Any]:
     if len(source.encode("utf-8")) > settings.exec_max_source_bytes:
         return fatal("SubmissionTooLarge",
                      f"source exceeds {settings.exec_max_source_bytes} bytes")
 
+    lang = languages.get(language)
+    if lang is None:
+        return fatal("UnknownLanguage", f"no language {language!r}")
+    if not lang.implemented:
+        return fatal("LanguageUnavailable",
+                     f"{lang.label} has no driver yet -- {lang.todo}")
+
     name = settings.resolved_executor or "local"
     backend = executors.get(name)
-    job = Job(source=source, topic=topic, num=num, mode=mode)
+    job = Job(source=source, topic=topic, num=num, mode=mode,
+              language=language, plan=plan,
+              filename=f"solution.{lang.ext}")
 
     if not _slots.acquire(timeout=_ACQUIRE_TIMEOUT):
         # Shedding load with a clear message beats queueing behind a timeout
@@ -58,4 +68,6 @@ def run_submission(source: str, topic: int, num: int,
     finally:
         _slots.release()
 
-    return to_report(result, name)
+    report = to_report(result, name)
+    report["language"] = language
+    return report

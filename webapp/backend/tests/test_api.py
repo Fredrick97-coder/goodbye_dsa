@@ -237,12 +237,55 @@ def test_cross_origin_mutation_is_refused(account):
                        ).status_code == 200
 
 
-def test_unknown_language_is_refused_clearly(account):
+def test_unimplemented_language_explains_what_is_missing(account):
+    """
+    The message names the gap rather than saying "soon".
+
+    It used to say "only Python runs today", which stopped being true and would
+    have been a lie in the UI the moment a second driver landed.
+    """
     client, _, _ = account
     res = client.post("/api/submit", json={
         "problemId": "03-01", "language": "java", "source": "x", "mode": "test"})
     assert res.status_code == 400
-    assert "only Python" in res.json()["detail"]
+    detail = res.json()["detail"]
+    assert "Java" in detail and "driver" in detail
+
+
+def test_unknown_language_is_rejected(account):
+    client, _, _ = account
+    res = client.post("/api/submit", json={
+        "problemId": "03-01", "language": "brainfuck", "source": "x",
+        "mode": "test"})
+    assert res.status_code == 400
+    assert "unknown language" in res.json()["detail"]
+
+
+def test_a_python_only_problem_refuses_another_language(account):
+    """
+    04-01's test drives a class through method calls, so it cannot be serialised.
+
+    Grading it in TypeScript would mean grading nothing, and reporting a pass
+    would be worse than refusing.
+    """
+    client, _, _ = account
+    res = client.post("/api/submit", json={
+        "problemId": "04-01", "language": "typescript",
+        "source": "export class Stack {}\n", "mode": "test"})
+    assert res.status_code == 400
+    assert "only be graded in Python" in res.json()["detail"]
+
+
+def test_problem_detail_lists_the_languages_it_supports(client):
+    portable = client.get("/api/problems/03-01").json()
+    assert portable["portable"] is True
+    assert "python" in portable["languages"]
+    assert set(portable["starterCode"]) >= {"python"}
+
+    python_only = client.get("/api/problems/04-01").json()
+    assert python_only["portable"] is False
+    assert python_only["languages"] == ["python"]
+    assert python_only["languageNotes"], "should explain why"
 
 
 def test_health_reports_the_executor_and_schema(client):
@@ -270,3 +313,81 @@ def test_access_log_lines_carry_the_request_id(client, caplog):
     records = [r for r in caplog.records if "/api/meta" in r.getMessage()]
     assert records, "the request was not logged at all"
     assert getattr(records[0], "request_id", "-") == "abc123"
+
+
+# ------------------------------------------------------------- preferences
+
+def test_preferences_default_for_a_signed_out_visitor(client):
+    body = client.get("/api/auth/me").json()
+    assert body["user"] is None
+    assert body["preferences"] == {"language": "python"}
+
+
+def test_preference_survives_logout_and_login(client):
+    creds = {"email": "keeper@example.com", "password": "remember this one"}
+    client.post("/api/auth/register", json=creds)
+
+    saved = client.patch("/api/preferences", json={"language": "typescript"})
+    assert saved.status_code == 200
+    assert saved.json()["language"] == "typescript"
+
+    # A fresh read of the session -- what the app does on reload.
+    assert client.get("/api/auth/me").json()["preferences"]["language"] == "typescript"
+
+    client.post("/api/auth/logout")
+    assert client.get("/api/auth/me").json()["preferences"] == {"language": "python"}
+
+    back = client.post("/api/auth/login", json=creds)
+    assert back.json()["preferences"]["language"] == "typescript"
+
+
+def test_preferences_are_per_account(client, tmp_path):
+    a = {"email": "one@example.com", "password": "first account here"}
+    b = {"email": "two@example.com", "password": "second account here"}
+    client.post("/api/auth/register", json=a)
+    client.patch("/api/preferences", json={"language": "typescript"})
+    client.post("/api/auth/logout")
+
+    client.post("/api/auth/register", json=b)
+    assert client.get("/api/auth/me").json()["preferences"]["language"] == "python"
+    client.post("/api/auth/logout")
+
+    client.post("/api/auth/login", json=a)
+    assert client.get("/api/auth/me").json()["preferences"]["language"] == "typescript"
+
+
+def test_an_unrunnable_language_cannot_be_saved(account):
+    """
+    Saving `rust` would be saving a choice that fails at submit time.
+
+    The whitelist check is the same one the submit path uses, so the two cannot
+    disagree about what is runnable.
+    """
+    client, _, _ = account
+    assert client.patch("/api/preferences", json={"language": "rust"}).status_code == 422
+    assert client.patch("/api/preferences", json={"language": "cobol"}).status_code == 422
+    assert client.get("/api/preferences").json()["language"] == "python"
+
+
+def test_preferences_need_an_account(client):
+    assert client.get("/api/preferences").status_code == 401
+    assert client.patch("/api/preferences",
+                        json={"language": "typescript"}).status_code == 401
+
+
+def test_empty_preference_update_is_rejected(account):
+    client, _, _ = account
+    assert client.patch("/api/preferences", json={}).status_code == 422
+
+
+def test_deleting_an_account_removes_its_preferences(account):
+    """Migration 4's cascade, which is decoration unless foreign keys are on."""
+    from app import db, store
+    client, email, _ = account
+    user_id = store.user_by_email(email)["id"]
+    client.patch("/api/preferences", json={"language": "typescript"})
+    assert store.preferences(user_id)["language"] == "typescript"
+
+    db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    rows = db.query_all("SELECT * FROM preferences WHERE user_id = ?", (user_id,))
+    assert rows == []

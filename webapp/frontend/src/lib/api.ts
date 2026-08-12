@@ -1,5 +1,6 @@
 import type {
   Activity, Meta, Note, Overview, ProblemDetail, ProblemSummary,
+  CourseDetail, CourseSummary, LessonDetail, ModuleDetail, Preferences,
   Submission, SubmitReport, User,
 } from "./types";
 
@@ -78,13 +79,16 @@ export interface ProblemQuery {
 }
 
 export const auth = {
-  me: () => req<{ user: User | null; sessions?: number }>("/auth/me"),
+  me: () => req<{ user: User | null; preferences: Preferences;
+                 sessions?: number }>("/auth/me"),
 
   register: (email: string, password: string, name?: string) =>
-    req<{ user: User }>("/auth/register", json({ email, password, name })),
+    req<{ user: User; preferences: Preferences }>(
+      "/auth/register", json({ email, password, name })),
 
   login: (email: string, password: string) =>
-    req<{ user: User }>("/auth/login", json({ email, password })),
+    req<{ user: User; preferences: Preferences }>(
+      "/auth/login", json({ email, password })),
 
   logout: () => req<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 
@@ -98,6 +102,32 @@ export const auth = {
   logoutEverywhere: () =>
     req<{ ok: boolean; otherSessionsEnded: number }>(
       "/auth/logout-everywhere", { method: "POST" }),
+
+  savePreferences: (changes: Partial<Preferences>) =>
+    req<Preferences>("/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    }),
+};
+
+/**
+ * Preferences for a signed-out visitor.
+ *
+ * Kept locally so the picker still works before signing in, and handed to the
+ * account on sign-in if that account has never chosen -- the same "do not lose
+ * what they just did" rule as draft adoption.
+ */
+export const localPrefs = {
+  KEY: "forge:prefs",
+  load(): Partial<Preferences> {
+    try { return JSON.parse(localStorage.getItem(this.KEY) ?? "{}"); }
+    catch { return {}; }
+  },
+  save(prefs: Partial<Preferences>) {
+    try { localStorage.setItem(this.KEY, JSON.stringify(prefs)); }
+    catch { /* quota */ }
+  },
 };
 
 export const api = {
@@ -129,6 +159,30 @@ export const api = {
       { method: "POST" }),
 
   note: (id: string) => req<Note>(`/notes/${id}`),
+
+  /* ---------------------------------------------------------------- courses */
+
+  courses: () => req<CourseSummary[]>("/courses"),
+
+  course: (courseId: string) => req<CourseDetail>(`/courses/${courseId}`),
+
+  module: (courseId: string, moduleId: string) =>
+    req<ModuleDetail>(`/courses/${courseId}/modules/${moduleId}`),
+
+  lesson: (courseId: string, moduleId: string, slug: string) =>
+    req<LessonDetail>(
+      `/courses/${courseId}/modules/${moduleId}/lessons/${slug}`),
+
+  markLesson: (courseId: string, moduleId: string, slug: string, done: boolean) =>
+    req<{ completed: boolean; moduleLessonsRead: number;
+          courseLessonsRead: number }>(
+      `/courses/${courseId}/modules/${moduleId}/lessons/${slug}/done`,
+      json({ done })),
+
+  runExamples: (courseId: string, moduleId: string) =>
+    req<{ stdout: string; elapsedMs: number; executor: string;
+          error: string | null }>(
+      `/courses/${courseId}/modules/${moduleId}/examples`, { method: "POST" }),
 
   saveNote: (id: string, body: string) =>
     req<Note>(`/notes/${id}`, {

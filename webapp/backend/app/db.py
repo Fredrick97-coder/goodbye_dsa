@@ -308,6 +308,36 @@ MIGRATIONS: List[Tuple[int, str, str]] = [
         CREATE INDEX IF NOT EXISTS ix_attempts_lookup
             ON auth_attempts (bucket, client, created_at);
     """),
+
+    (4, "per-account preferences (chosen language, and whatever comes next)", """
+        -- Key/value rather than a column per setting: the next preference is
+        -- then a whitelist entry in code, not a schema migration and a
+        -- deployment. Values are TEXT and validated on the way in; there are
+        -- few enough settings that typing them in SQL buys nothing.
+        CREATE TABLE IF NOT EXISTS preferences (
+            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            key        TEXT NOT NULL,
+            value      TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY (user_id, key)
+        );
+    """),
+
+    (5, "lesson progress, so reading is tracked as well as solving", """
+        -- Content itself stays in files; this is the only thing a learner's
+        -- reading adds to the database. `lesson_id` is "<module>/<slug>", a
+        -- slug rather than a position, so inserting a section does not shift
+        -- every id and silently reset progress.
+        CREATE TABLE IF NOT EXISTS lesson_progress (
+            user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            course_id    TEXT NOT NULL,
+            lesson_id    TEXT NOT NULL,
+            completed_at REAL NOT NULL,
+            PRIMARY KEY (user_id, course_id, lesson_id)
+        );
+        CREATE INDEX IF NOT EXISTS ix_lesson_progress_user
+            ON lesson_progress (user_id, course_id, completed_at);
+    """),
 ]
 
 SCHEMA_VERSION = max(version for version, _, _ in MIGRATIONS)

@@ -31,22 +31,41 @@ import uuid
 from pathlib import Path
 from typing import List
 
+from .. import languages
 from ..settings import settings
-from .base import Job, RawResult, now_ms
+from .base import Job, RawResult, now_ms, staged
 
-CHILD = Path(__file__).resolve().parents[1] / "child_runner.py"
+RUNNERS = Path(__file__).resolve().parents[1] / "runners"
 CONTAINER_REPO = "/repo"
-CONTAINER_RUNNER = "/runner/child_runner.py"
+CONTAINER_RUNNERS = "/runner"
+CONTAINER_WORK = "/work"
 
 
-def build_argv(name: str) -> List[str]:
+def build_argv(name: str, lang=None, workdir: str = "") -> List[str]:
     """
     The exact `docker run` argv, separated out so tests can assert on it.
 
     A sandbox whose flags are only verified by running it is a sandbox whose
     flags silently regress; this way the important ones are unit-tested.
     """
+    lang = lang or languages.get("python")
     memory = f"{settings.exec_memory_mb}m"
+    mounts: List[str] = [
+        "--volume", f"{settings.python_root.resolve()}:{CONTAINER_REPO}:ro",
+        "--volume", f"{RUNNERS.resolve()}:{CONTAINER_RUNNERS}:ro",
+    ]
+    if workdir:
+        # The staged source, read-only: the container must import it, never
+        # modify it, and never see anything else from the host.
+        mounts += ["--volume", f"{workdir}:{CONTAINER_WORK}:ro"]
+
+    inner = languages.resolve_command(
+        lang,
+        driver=f"{CONTAINER_RUNNERS}/{lang.driver}",
+        python_root=CONTAINER_REPO,
+        workdir=CONTAINER_WORK,
+        python="python",
+    )
     return [
         settings.docker_binary, "run",
         "--rm", "--interactive",
@@ -64,11 +83,11 @@ def build_argv(name: str) -> List[str]:
         "--workdir", "/tmp",
         "--env", "PYTHONDONTWRITEBYTECODE=1",
         "--env", "PYTHONUNBUFFERED=1",
+        "--env", "NODE_OPTIONS=--no-warnings",
         "--env", "HOME=/tmp",
-        "--volume", f"{settings.python_root.resolve()}:{CONTAINER_REPO}:ro",
-        "--volume", f"{CHILD.resolve()}:{CONTAINER_RUNNER}:ro",
-        settings.docker_image,
-        "python", "-I", CONTAINER_RUNNER, CONTAINER_REPO,
+        *mounts,
+        languages.image_for(lang),
+        *inner,
     ]
 
 
@@ -80,12 +99,18 @@ class DockerExecutor:
         # Hex only: docker rejects names outside [a-zA-Z0-9][a-zA-Z0-9_.-]*,
         # and a name built from anything caller-supplied would be an injection
         # point into the argv.
+        lang = languages.get(job.language)
+        if lang is None or not lang.implemented:
+            return RawResult("", f"no driver for {job.language}", 1, 0.0)
+
         name = f"forge-run-{uuid.uuid4().hex[:16]}"
         started = time.perf_counter()
-        try:
+        with staged(job) as (workdir, source_path):
+          container_source = f"{CONTAINER_WORK}/{job.filename}"
+          try:
             proc = subprocess.run(
-                build_argv(name),
-                input=job.payload(),
+                build_argv(name, lang, workdir),
+                input=job.payload(container_source),
                 capture_output=True,
                 text=True,
                 # A little grace over the in-container limits: the container
@@ -93,7 +118,7 @@ class DockerExecutor:
                 # daemon rather than the primary limit.
                 timeout=settings.exec_wall_seconds + 10,
             )
-        except subprocess.TimeoutExpired:
+          except subprocess.TimeoutExpired:
             self._force_remove(name)
             return RawResult("", "", None,
                              (settings.exec_wall_seconds + 10) * 1000,
@@ -103,8 +128,8 @@ class DockerExecutor:
         # this stack, that is the CPU hard limit rather than the cgroup OOM
         # killer (a real memory bomb trips the child's RLIMIT_AS and reports a
         # clean MemoryError instead). `to_report` names both causes.
-        return RawResult(proc.stdout, proc.stderr, proc.returncode,
-                         now_ms(started))
+          return RawResult(proc.stdout, proc.stderr, proc.returncode,
+                           now_ms(started))
 
     def _force_remove(self, name: str) -> None:
         try:
@@ -127,15 +152,22 @@ def availability() -> tuple:
     if info.returncode != 0:
         return False, "daemon unreachable (is Docker running?)"
 
-    # The image has to exist locally: pulling on the first submission would turn
-    # one learner's Submit into a multi-minute wait.
-    try:
-        found = subprocess.run(
-            [settings.docker_binary, "image", "inspect", settings.docker_image],
-            capture_output=True, text=True, timeout=25)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return False, f"image check failed: {exc}"
-    if found.returncode != 0:
-        return False, (f"image {settings.docker_image} not built -- run "
+    # The images have to exist locally: pulling on the first submission would
+    # turn one learner's Submit into a multi-minute wait.
+    missing = []
+    for lang in languages.LANGUAGES:
+        if not lang.implemented:
+            continue
+        image = languages.image_for(lang)
+        try:
+            found = subprocess.run(
+                [settings.docker_binary, "image", "inspect", image],
+                capture_output=True, text=True, timeout=25)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, f"image check failed: {exc}"
+        if found.returncode != 0:
+            missing.append(f"{image} ({lang.id})")
+    if missing:
+        return False, (f"image(s) not built: {', '.join(missing)} -- run "
                        f"backend/docker/build.sh")
-    return True, f"docker {info.stdout.strip()}, image {settings.docker_image}"
+    return True, f"docker {info.stdout.strip()}"

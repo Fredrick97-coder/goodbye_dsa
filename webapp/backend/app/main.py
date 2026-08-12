@@ -35,7 +35,8 @@ from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import auth, db, executors, progress, repo, settings as config, store
+from . import (auth, content, courses_api, db, executors, languages,
+               progress, repo, settings as config, store)
 from .execute import run_submission
 from .observability import (BodyLimitMiddleware, RequestContextMiddleware,
                             SecurityHeadersMiddleware, configure_logging,
@@ -171,7 +172,8 @@ def register(req: RegisterRequest, request: Request,
     store.mark_login(user["id"])
     auth.set_session_cookie(response, auth.new_session(user["id"], request),
                             request)
-    return {"user": auth.public_user(user)}
+    return {"user": auth.public_user(user),
+            "preferences": store.preferences(user["id"])}
 
 
 @app.post("/api/auth/login")
@@ -193,7 +195,8 @@ def login(req: LoginRequest, request: Request,
     store.mark_login(user["id"])
     auth.set_session_cookie(response, auth.new_session(user["id"], request),
                             request)
-    return {"user": auth.public_user(user)}
+    return {"user": auth.public_user(user),
+            "preferences": store.preferences(user["id"])}
 
 
 @app.post("/api/auth/logout")
@@ -211,8 +214,11 @@ def me(user: Optional[Dict[str, Any]] = Depends(auth.current_user_optional),
        ) -> Dict[str, Any]:
     """Always 200, with `user: null` when signed out -- this is how the app boots."""
     if user is None:
-        return {"user": None}
+        # Defaults, so a signed-out client renders the same shape rather than
+        # branching on whether preferences exist.
+        return {"user": None, "preferences": dict(store.PREFERENCE_DEFAULTS)}
     return {"user": auth.public_user(user),
+            "preferences": store.preferences(user["id"]),
             "sessions": store.session_count(user["id"])}
 
 
@@ -263,7 +269,50 @@ def logout_everywhere(request: Request,
     return {"ok": True, "otherSessionsEnded": ended}
 
 
+class PreferencesRequest(BaseModel):
+    """A partial update: only the keys present are changed."""
+    language: Optional[str] = None
+
+
+@app.get("/api/preferences")
+def get_preferences(user: Dict[str, Any] = Depends(auth.current_user),
+                    ) -> Dict[str, Any]:
+    return store.preferences(user["id"])
+
+
+@app.patch("/api/preferences")
+def patch_preferences(req: PreferencesRequest, request: Request,
+                      user: Dict[str, Any] = Depends(auth.current_user),
+                      ) -> Dict[str, Any]:
+    """
+    Update the preferences named in the body.
+
+    Every value is checked against the whitelist in store.PREFERENCE_KEYS, so
+    this endpoint cannot be used to stash arbitrary strings against a user id --
+    and a language that has no driver is refused rather than saved and then
+    silently ignored at submit time.
+    """
+    auth.check_origin(request)
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "no preferences given")
+    for key, value in updates.items():
+        check = store.PREFERENCE_KEYS.get(key)
+        if check is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"unknown preference {key!r}")
+        if not isinstance(value, str) or not check(value):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"{value!r} is not a valid {key}")
+        store.set_preference(user["id"], key, value)
+    return store.preferences(user["id"])
+
+
 # -------------------------------------------------------------------- meta
+
+app.include_router(courses_api.router)
+
 
 @app.get("/api/health")
 def health() -> Dict[str, Any]:
@@ -280,6 +329,7 @@ def health() -> Dict[str, Any]:
         "detail": detail,
         "config": config.summary(),
         "db": db.stats(),
+        "content": content.stats(),
         "executorSafe": executors.is_safe(settings.resolved_executor or "local"),
         "warnings": config.warnings_for(settings.resolved_executor or "local"),
         "pythonRoot": str(repo.PYTHON_ROOT),
@@ -302,7 +352,7 @@ def ready() -> Dict[str, Any]:
 def meta() -> Dict[str, Any]:
     """Everything the UI needs to boot: languages, topics, and totals."""
     return {
-        "languages": repo.LANGUAGES,
+        "languages": repo.language_status(),
         "topics": repo.topics(),
         "stats": repo.stats(),
         "difficulties": ["Easy", "Medium", "Hard", "Challenge"],
@@ -410,19 +460,38 @@ def submit(req: SubmitRequest, request: Request,
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             "sign in to submit and track your progress")
 
-    if req.language != "python":
+    lang = languages.get(req.language)
+    if lang is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"unknown language {req.language!r}")
+    if not lang.implemented:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"{req.language} is not executable yet -- only Python runs today. "
-            f"The repo's reference tests are Python functions, so other "
-            f"languages need a separate stdin/stdout test format.")
+            f"{lang.label} is not runnable yet -- {lang.todo}")
+    usable, detail = languages.runtime_available(lang.runtime)
+    if not usable:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"{lang.label} is unavailable on this server: {detail}")
 
     target = repo.find_problem(req.problemId)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             f"no problem {req.problemId}")
 
-    report = run_submission(req.source, target.topic, target.num, req.mode)
+    # Non-Python drivers cannot run the Python specs, so they are handed the
+    # serialised plan instead. Python loads the specs itself and ignores it.
+    plan = None
+    if req.language != "python" and req.mode == "test":
+        plan = repo.plan(target.topic, target.num)
+        if not plan["targets"] or plan["excluded"]:
+            reasons = "; ".join(f"{e['name']}: {e['reason']}"
+                                for e in plan["excluded"]) or "no portable tests"
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"this problem can only be graded in Python -- {reasons}")
+
+    report = run_submission(req.source, target.topic, target.num, req.mode,
+                            language=req.language, plan=plan)
     report["problemId"] = req.problemId
 
     # Only graded runs go in the history. "Run" is a scratchpad and recording

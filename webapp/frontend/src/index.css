@@ -48,6 +48,60 @@
   }
   .scroll-thin::-webkit-scrollbar-thumb:hover { background: rgb(65 79 107); background-clip: content-box; }
 
+  /* ------------------------------------------------------------ lessons */
+  /* Prose for a lesson body. Sized for reading a page, not scanning a panel:
+     larger type and a wider line height than the problem statement. */
+  .lesson {
+    @apply text-[14.5px] leading-[1.75] text-mist-200;
+  }
+  .lesson > p { @apply my-4; }
+  .lesson strong { @apply font-semibold text-white; }
+  .lesson em { @apply italic text-mist-100; }
+  .lesson-h2 {
+    @apply mt-9 mb-3 scroll-mt-24 text-[17px] font-bold tracking-tight text-white;
+  }
+  .lesson-h3 {
+    @apply mt-7 mb-2 scroll-mt-24 text-[15px] font-semibold text-mist-100;
+  }
+  .lesson-h4 { @apply mt-5 mb-2 text-[13.5px] font-semibold text-mist-200; }
+  .lesson ul { @apply my-4 space-y-1.5 pl-1; }
+  .lesson ol { @apply my-4 list-decimal space-y-1.5 pl-6; }
+  .lesson ul > li {
+    @apply relative pl-5;
+  }
+  .lesson ul > li::before {
+    content: "";
+    @apply absolute left-1 top-[0.62em] h-1 w-1 rounded-full bg-volt-400;
+  }
+  .lesson ol > li::marker { @apply text-mist-400; }
+  .lesson .inline-code {
+    @apply rounded border border-white/[.07] bg-ink-750 px-1.5 py-0.5
+           font-mono text-[12.5px] text-volt-300;
+  }
+  .lesson-table {
+    @apply w-full border-collapse text-[12.5px];
+  }
+  .lesson-table thead {
+    @apply bg-ink-950/70;
+  }
+  .lesson-table th {
+    @apply border-b border-white/[.08] px-3 py-2 text-left font-semibold text-mist-100;
+  }
+  .lesson-table td {
+    @apply border-b border-white/[.04] px-3 py-2 align-top text-mist-300;
+  }
+  .lesson-table tbody tr:last-child td { @apply border-b-0; }
+  .lesson-table code { @apply font-mono text-[11.5px] text-volt-300; }
+  .lesson-quote {
+    @apply my-4 rounded-r-lg border-l-2 border-volt-500/60 bg-volt-500/[.06]
+           py-2.5 pl-4 pr-3 text-mist-200;
+  }
+  .lesson-quote > p { @apply my-0; }
+  .lesson-link {
+    @apply text-volt-300 underline decoration-volt-500/40 underline-offset-2
+           transition-colors hover:text-volt-200;
+  }
+
   /* Prose for the problem statement, tuned for a dark panel. */
   .statement { @apply text-[13.5px] leading-relaxed text-mist-300; }
   .statement code {
@@ -66,3 +120,21 @@
 [data-separator]::after {
   content: ""; position: absolute; inset: -3px;
 }
+
+/* highlight.js, in the app's own colours. A stock theme would be the one thing
+   on the page that looks borrowed -- and these are the exact tokens the Monaco
+   theme uses in the editor, so code reads the same whether you are studying it
+   or writing it. */
+.hljs { @apply text-mist-200; }
+.hljs-comment, .hljs-quote { @apply italic text-ink-400; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag { @apply text-volt-300; }
+.hljs-string, .hljs-regexp, .hljs-addition { @apply text-mint-400; }
+.hljs-number, .hljs-symbol, .hljs-bullet { @apply text-amber-400; }
+.hljs-title, .hljs-section, .hljs-name { @apply text-sky-400; }
+.hljs-class .hljs-title, .hljs-type, .hljs-built_in { @apply text-sky-400; }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable { @apply text-mist-100; }
+.hljs-params { @apply text-mist-200; }
+.hljs-meta { @apply text-mist-400; }
+.hljs-deletion { @apply text-rose-400; }
+.hljs-emphasis { @apply italic; }
+.hljs-strong { @apply font-semibold; }

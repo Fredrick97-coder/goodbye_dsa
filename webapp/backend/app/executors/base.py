@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import json
 import time
+import contextlib
+import os
+import tempfile
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, Iterator, Optional, Protocol
 
 from ..settings import settings
 
@@ -27,14 +30,32 @@ class Job:
     topic: int
     num: int
     mode: str = "test"
+    language: str = "python"
+    #: The language-neutral test plan. Required by drivers that cannot run the
+    #: Python specs themselves; the Python driver ignores it and loads them.
+    plan: Optional[Dict[str, Any]] = None
+    #: Filename the source is staged as, e.g. solution.mts. The extension is
+    #: load-bearing for some runtimes -- Node reads .mts as ES-module
+    #: TypeScript and a bare .ts as CommonJS, which fails on the first export.
+    filename: str = "solution.py"
 
-    def payload(self) -> str:
-        """What the child reads on stdin."""
+    def payload(self, source_path: str) -> str:
+        """
+        What the driver reads on stdin.
+
+        `sourceFile` is a path the driver can import directly. The PARENT writes
+        it, not the driver: under the Seatbelt profile nothing may write to disk
+        at all, so a driver that had to create its own temp file could not run
+        sandboxed.
+        """
         return json.dumps({
             "source": self.source,
+            "sourceFile": source_path,
             "topic": self.topic,
             "num": self.num,
             "mode": self.mode,
+            "language": self.language,
+            "plan": self.plan,
             "cpuSeconds": settings.exec_cpu_seconds,
             "memoryMb": settings.exec_memory_mb,
         })
@@ -55,6 +76,28 @@ class Executor(Protocol):
     name: str
 
     def run(self, job: Job) -> RawResult: ...
+
+
+@contextlib.contextmanager
+def staged(job: Job) -> Iterator[tuple]:
+    """
+    Write the submission to a throwaway directory. Yields (dir, file).
+
+    Mode 0o755 on the directory and 0o644 on the file because the container runs
+    as uid 65534, which is not the uid that created them -- default 0o700 would
+    make the mount unreadable and every submission would fail to import.
+    """
+    tmp = tempfile.mkdtemp(prefix="forge-src-")
+    try:
+        os.chmod(tmp, 0o755)
+        path = os.path.join(tmp, job.filename)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(job.source)
+        os.chmod(path, 0o644)
+        yield tmp, path
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ------------------------------------------------------------------ shaping

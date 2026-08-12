@@ -186,6 +186,9 @@ class Settings:
 
     # ----------------------------------------------------------- curriculum
     python_root: Path
+    #: Where course directories live. Each contains a course.json manifest, so a
+    #: second course is a directory rather than a code change.
+    courses_root: Path
 
     # Filled in by resolve_executor() once the platform is known.
     resolved_executor: str = field(default="", compare=False)
@@ -288,6 +291,7 @@ def _load() -> Settings:
         log_requests=_flag("LOG_REQUESTS", True),
 
         python_root=Path(_env("PYTHON_ROOT", str(REPO_ROOT / "python"))),
+        courses_root=Path(_env("COURSES_ROOT", str(REPO_ROOT))),
     )
 
 
@@ -400,6 +404,7 @@ def summary() -> dict:
             "maxSourceBytes": settings.exec_max_source_bytes,
             "maxConcurrent": settings.exec_max_concurrent,
         },
+        "coursesRoot": str(settings.courses_root),
         "python": sys.version.split()[0],
         "platform": platform.system(),
     }

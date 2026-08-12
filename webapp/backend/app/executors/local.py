@@ -16,10 +16,11 @@ import sys
 import time
 from pathlib import Path
 
+from .. import languages
 from ..settings import settings
-from .base import Job, RawResult, now_ms
+from .base import Job, RawResult, now_ms, staged
 
-CHILD = Path(__file__).resolve().parents[1] / "child_runner.py"
+RUNNERS = Path(__file__).resolve().parents[1] / "runners"
 
 
 class LocalExecutor:
@@ -27,23 +28,34 @@ class LocalExecutor:
     safe_for_untrusted = False
 
     def run(self, job: Job) -> RawResult:
+        lang = languages.get(job.language)
+        if lang is None or not lang.implemented:
+            return RawResult("", f"no driver for {job.language}", 1, 0.0)
+
         started = time.perf_counter()
-        try:
-            proc = subprocess.run(
-                # -I: isolated mode. Ignores PYTHONPATH and the user site
-                # directory, so a submission cannot be influenced by whatever
-                # happens to be installed for the server user.
-                [sys.executable, "-I", str(CHILD), str(settings.python_root)],
-                input=job.payload(),
-                capture_output=True,
-                text=True,
-                timeout=settings.exec_wall_seconds,
+        with staged(job) as (workdir, source_path):
+            argv = languages.resolve_command(
+                lang,
+                driver=str(RUNNERS / lang.driver),
+                python_root=str(settings.python_root),
+                workdir=workdir,
+                # -I (isolated) is in the Python row's template: it ignores
+                # PYTHONPATH and the user site directory, so a submission cannot
+                # be influenced by whatever is installed for the server user.
+                python=sys.executable,
             )
-        except subprocess.TimeoutExpired:
-            return RawResult("", "", None,
-                             settings.exec_wall_seconds * 1000, timed_out=True)
-        return RawResult(proc.stdout, proc.stderr, proc.returncode,
-                         now_ms(started))
+            try:
+                proc = subprocess.run(
+                    argv, input=job.payload(source_path),
+                    capture_output=True, text=True,
+                    timeout=settings.exec_wall_seconds,
+                )
+            except subprocess.TimeoutExpired:
+                return RawResult("", "", None,
+                                 settings.exec_wall_seconds * 1000,
+                                 timed_out=True)
+            return RawResult(proc.stdout, proc.stderr, proc.returncode,
+                             now_ms(started))
 
 
 def availability() -> tuple:

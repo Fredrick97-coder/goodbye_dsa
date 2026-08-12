@@ -28,30 +28,21 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
 from _harness.catalog import Problem, parse_all           # noqa: E402
+from _harness.fixtures import plan_for_problem, problem_support   # noqa: E402
 from _harness.loader import topic_dirs, topic_title       # noqa: E402
 from _harness.specs import load_all                       # noqa: E402
 
 # Languages the repo has folders for. Only Python executes today; the rest are
 # advertised as unavailable so the UI can show them honestly rather than
 # pretending and then failing.
-LANGUAGES = [
-    {"id": "python", "label": "Python 3", "monaco": "python",
-     "ext": "py", "available": True},
-    {"id": "javascript", "label": "JavaScript", "monaco": "javascript",
-     "ext": "js", "available": False},
-    {"id": "typescript", "label": "TypeScript", "monaco": "typescript",
-     "ext": "ts", "available": False},
-    {"id": "java", "label": "Java", "monaco": "java",
-     "ext": "java", "available": False},
-    {"id": "cpp", "label": "C++", "monaco": "cpp",
-     "ext": "cpp", "available": False},
-    {"id": "csharp", "label": "C#", "monaco": "csharp",
-     "ext": "cs", "available": False},
-    {"id": "go", "label": "Go", "monaco": "go",
-     "ext": "go", "available": False},
-    {"id": "rust", "label": "Rust", "monaco": "rust",
-     "ext": "rs", "available": False},
-]
+# The language table lives in app/languages.py; this re-export keeps older
+# callers working while there is exactly one source of truth.
+from . import languages as _languages            # noqa: E402
+
+
+def language_status():
+    return _languages.status()
+
 
 DIFFICULTY_ORDER = {"Easy": 0, "Medium": 1, "Hard": 2, "Challenge": 3}
 
@@ -262,20 +253,100 @@ def _problem_dict(p: Problem, with_detail: bool = False) -> Dict[str, Any]:
         "testCount": len(specs),
         "drillable": p.drillable,
     }
+    support = problem_support(p.topic, p.num, specs)
+    data["portable"] = bool(support["portable"])
+    data["languages"] = _languages_for(support)
+
     if with_detail:
         data.update({
             "inputDesc": p.input_desc,
             "outputDesc": p.output_desc,
             "example": p.example,
             "notes": [sp.note for sp in specs if sp.note],
-            "starterCode": {"python": starter_code(
-                p.topic, p.unique_targets,
-                needs_scaffold=any(sp.build is not None
-                                   or sp.build_cases is not None
-                                   for sp in specs))},
+            "starterCode": _starters(p, specs, support),
             "conventions": _conventions(specs),
+            "languageNotes": _language_notes(support),
         })
     return data
+
+
+def _languages_for(support: Dict[str, Any]) -> List[str]:
+    """
+    Which languages can actually grade THIS problem.
+
+    Python always can -- the specs are Python. Everything else needs the
+    problem's data to survive being serialised, so a problem whose test drives a
+    class through method calls is Python-only, and the UI disables the rest
+    rather than letting someone write a solution nothing will run.
+    """
+    out = ["python"]
+    if not support["portable"] or support["blocked"]:
+        return out
+    for entry in _languages.status():
+        if entry["id"] != "python" and entry["available"]:
+            out.append(entry["id"])
+    return out
+
+
+def _language_notes(support: Dict[str, Any]) -> List[str]:
+    """Why a language is missing, in the learner's words rather than silence."""
+    return [f"{item['name']}: {item['reason']}" for item in support["blocked"]]
+
+
+@lru_cache(maxsize=256)
+def _plan_cached(topic: int, num: int) -> Any:
+    """
+    The test plan, memoised.
+
+    Building one runs the Python reference forty times, which is cheap but not
+    free, and both the starter code and every submission in a non-Python language
+    need the same plan.
+    """
+    return plan_for_problem(topic, num, specs_for(topic, num))
+
+
+def plan(topic: int, num: int) -> Dict[str, Any]:
+    return _plan_cached(topic, num)
+
+
+def _starters(p: Problem, specs: List[Any],
+              support: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Starter code per language.
+
+    Python keeps its authored stub from exercise.py -- the author's own parameter
+    names and hints beat anything generated. Every other language is rendered
+    from the signature inferred from the test data, which is why a new language
+    needs no per-problem work.
+    """
+    from . import codegen
+
+    out = {"python": starter_code(
+        p.topic, p.unique_targets,
+        needs_scaffold=any(sp.build is not None or sp.build_cases is not None
+                           for sp in specs))}
+
+    if not support["portable"] or support["blocked"]:
+        return out
+
+    problem_plan = plan(p.topic, p.num)
+    if not problem_plan["targets"]:
+        return out
+    try:
+        signatures = codegen.signatures_for_plan(
+            problem_plan, _exercise_source(p.topic))
+    except Exception:                                       # noqa: BLE001
+        return out
+    notes = {t["name"]: t.get("note", "") for t in problem_plan["targets"]}
+    for entry in _languages.status():
+        lang = _languages.get(entry["id"])
+        if entry["id"] == "python" or lang is None or not lang.implemented:
+            continue
+        try:
+            out[entry["id"]] = codegen.starter(signatures, lang, notes)
+        except Exception:                                   # noqa: BLE001
+            continue
+    return out
 
 
 def _conventions(specs: List[Any]) -> List[str]:
@@ -308,6 +379,14 @@ def all_problems() -> List[Problem]:
 
 def list_problems() -> List[Dict[str, Any]]:
     return [_problem_dict(p) for p in all_problems()]
+
+
+def problems_in_topic(module_id: str) -> List[Problem]:
+    """Problems for a module id, which for the DSA course is its topic number."""
+    if not str(module_id).isdigit():
+        return []
+    number = int(module_id)
+    return [p for p in all_problems() if p.topic == number]
 
 
 def find_problem(problem_id: str) -> Optional[Problem]:

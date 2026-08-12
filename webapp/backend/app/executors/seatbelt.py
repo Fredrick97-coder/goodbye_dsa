@@ -35,10 +35,11 @@ import time
 from pathlib import Path
 from typing import Tuple
 
+from .. import languages
 from ..settings import settings
-from .base import Job, RawResult, now_ms
+from .base import Job, RawResult, now_ms, staged
 
-CHILD = Path(__file__).resolve().parents[1] / "child_runner.py"
+RUNNERS = Path(__file__).resolve().parents[1] / "runners"
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
 #: Places a submission has no business reading. The curriculum is carved back
@@ -50,18 +51,32 @@ DENY_READ_PREFIXES = (
 )
 
 
-def _profile() -> str:
+def _profile(extra_read: tuple = (), extra_exec: tuple = (),
+             extra_meta: tuple = ()) -> str:
+    """
+    The policy. `extra_read`/`extra_exec` admit a non-Python runtime.
+
+    A second language means a second interpreter binary, and both its own tree
+    and the staged source directory have to be readable -- otherwise the sandbox
+    denies the very thing it was asked to launch.
+    """
     prefix = Path(sys.prefix).resolve()
     base_prefix = Path(sys.base_prefix).resolve()
     repo = settings.python_root.resolve()
-    runner = CHILD.resolve().parent
+    runner = RUNNERS.resolve()
 
     deny_reads = "\n".join(f'(deny file-read* (subpath "{p}"))'
                            for p in DENY_READ_PREFIXES)
     allow_reads = "\n".join(f'(allow file-read* (subpath "{p}"))' for p in (
-        prefix, base_prefix, repo, runner))
+        (prefix, base_prefix, repo, runner) + tuple(extra_read)))
     allow_exec = "\n".join(f'(allow process-exec (subpath "{p}"))' for p in (
-        prefix, base_prefix))
+        (prefix, base_prefix) + tuple(extra_exec)))
+    # Metadata only. Node's ESM loader realpath()s the module it is given, which
+    # lstat()s every ancestor directory -- and a macOS temp dir sits under
+    # /var/folders, which is denied. Granting lstat on the ancestors keeps the
+    # ban on actually reading their contents.
+    allow_meta = "\n".join(f'(allow file-read-metadata (subpath "{p}"))'
+                           for p in tuple(extra_meta))
 
     return f"""(version 1)
 (allow default)
@@ -78,6 +93,7 @@ def _profile() -> str:
 ;;    added back afterwards -- these allows MUST follow the denies.
 {deny_reads}
 {allow_reads}
+{allow_meta}
 
 ;; 4. No running other programs. Only the interpreter's own prefix, which is
 ;;    what sandbox-exec is about to launch; a bare `(deny process-exec*)` also
@@ -92,21 +108,68 @@ class SeatbeltExecutor:
     safe_for_untrusted = True
 
     def run(self, job: Job) -> RawResult:
+        lang = languages.get(job.language)
+        if lang is None or not lang.implemented:
+            return RawResult("", f"no driver for {job.language}", 1, 0.0)
+
+        found = _runtime_binary(lang)
+        if found is None:
+            return RawResult("", f"{lang.runtime} runtime not found", 1, 0.0)
+        link, real = found
+
         started = time.perf_counter()
-        argv = [
-            SANDBOX_EXEC, "-p", _profile(),
-            sys.executable, "-I", str(CHILD), str(settings.python_root),
-        ]
-        try:
-            proc = subprocess.run(
-                argv, input=job.payload(), capture_output=True, text=True,
-                timeout=settings.exec_wall_seconds,
-            )
-        except subprocess.TimeoutExpired:
-            return RawResult("", "", None,
-                             settings.exec_wall_seconds * 1000, timed_out=True)
-        return RawResult(proc.stdout, proc.stderr, proc.returncode,
-                         now_ms(started))
+        with staged(job) as (workdir, source_path):
+            # The staged directory must be readable (the driver imports the file
+            # from it) but never writable -- the deny on writes stays absolute.
+            #
+            # Both the PATH entry and its target are admitted: Homebrew's `node`
+            # is a symlink in /opt/homebrew/bin pointing into ../Cellar, and /opt
+            # is on the deny list. Allowing only the resolved path left
+            # sandbox-exec unable to read the symlink it was told to run, which
+            # surfaced as "execvp() of 'node' failed: Operation not permitted".
+            roots = {link.parent, link.parent.parent, real.parent,
+                     real.parent.parent}
+            ancestors = tuple(Path(workdir).parents)
+            profile = _profile(extra_read=(workdir, *roots),
+                               extra_exec=tuple(roots),
+                               extra_meta=ancestors)
+            argv = [SANDBOX_EXEC, "-p", profile] + languages.resolve_command(
+                lang, driver=str(RUNNERS / lang.driver),
+                python_root=str(settings.python_root),
+                workdir=workdir, python=sys.executable)
+            # An absolute argv[0]: sandbox-exec resolves a bare name through
+            # PATH, and the policy is expressed in paths.
+            argv[3] = str(real)
+            try:
+                proc = subprocess.run(
+                    argv, input=job.payload(source_path),
+                    capture_output=True, text=True,
+                    timeout=settings.exec_wall_seconds,
+                )
+            except subprocess.TimeoutExpired:
+                return RawResult("", "", None,
+                                 settings.exec_wall_seconds * 1000,
+                                 timed_out=True)
+            return RawResult(proc.stdout, proc.stderr, proc.returncode,
+                             now_ms(started))
+
+
+def _runtime_binary(lang):
+    """
+    (path_on_PATH, fully_resolved_path) for this language's interpreter.
+
+    Both matter: the policy must admit the symlink the shell would find *and*
+    the file it points at.
+    """
+    import shutil
+    if lang.runtime == "python":
+        exe = Path(sys.executable)
+        return exe, exe.resolve()
+    found = shutil.which(lang.command[0]) if lang.command else None
+    if not found:
+        return None
+    link = Path(found)
+    return link, link.resolve()
 
 
 def availability() -> Tuple[bool, str]:

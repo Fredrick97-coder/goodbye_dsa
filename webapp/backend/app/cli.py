@@ -26,7 +26,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import auth, db, executors, settings as config, store
+from . import languages, auth, db, executors, settings as config, store
 from .settings import settings
 
 
@@ -44,6 +44,11 @@ def cmd_check() -> int:
     print(json.dumps(db.stats(), indent=2))
 
     have = executors.availability()
+    print("\nlanguages:")
+    for entry in languages.status():
+        mark = "available" if entry["available"] else "unavailable"
+        print(f"  {entry['id']:11} {mark:12} {entry['detail']}")
+
     print("\nexecutors:")
     for name in ("docker", "seatbelt", "local"):
         mark = "available  " if have[name] else "unavailable"

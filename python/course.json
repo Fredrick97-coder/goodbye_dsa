@@ -1,0 +1,155 @@
+{
+  "id": "dsa",
+  "title": "Data Structures & Algorithms",
+  "subtitle": "From arrays to segment trees, with 342 graded problems and the reasoning behind every pattern.",
+  "language": "python",
+  "practiceLanguages": [
+    "python",
+    "typescript",
+    "javascript"
+  ],
+  "levels": [
+    "Beginner",
+    "Intermediate",
+    "Advanced",
+    "Interview Prep"
+  ],
+  "theoryFile": "theory.md",
+  "examplesFile": "examples.py",
+  "exercisesFile": "exercise.py",
+  "projectFile": "project.py",
+  "modules": [
+    {
+      "id": "01",
+      "dir": "01_introduction_to_dsa",
+      "title": "Introduction to Data Structures and Algorithms",
+      "level": "Beginner"
+    },
+    {
+      "id": "02",
+      "dir": "02_arrays_lists",
+      "title": "Arrays and Lists",
+      "level": "Beginner"
+    },
+    {
+      "id": "03",
+      "dir": "03_strings",
+      "title": "Strings and String Manipulation",
+      "level": "Beginner"
+    },
+    {
+      "id": "04",
+      "dir": "04_stacks",
+      "title": "Stacks - Last In, First Out (LIFO)",
+      "level": "Beginner"
+    },
+    {
+      "id": "05",
+      "dir": "05_queues",
+      "title": "Queues - First In, First Out (FIFO)",
+      "level": "Beginner"
+    },
+    {
+      "id": "06",
+      "dir": "06_basic_sorting",
+      "title": "Basic Sorting Algorithms",
+      "level": "Beginner"
+    },
+    {
+      "id": "07",
+      "dir": "07_linked_lists",
+      "title": "Linked Lists - Dynamic Data Structures",
+      "level": "Intermediate"
+    },
+    {
+      "id": "08",
+      "dir": "08_trees_basics",
+      "title": "Trees - Hierarchical Data Structures",
+      "level": "Intermediate"
+    },
+    {
+      "id": "09",
+      "dir": "09_hash_maps",
+      "title": "Hash Maps & Hash Tables",
+      "level": "Intermediate"
+    },
+    {
+      "id": "10",
+      "dir": "10_basic_searching",
+      "title": "Basic Searching Algorithms",
+      "level": "Intermediate"
+    },
+    {
+      "id": "11",
+      "dir": "11_graphs_basics",
+      "title": "Graphs - Traversal & Connectivity",
+      "level": "Intermediate"
+    },
+    {
+      "id": "12",
+      "dir": "12_dynamic_programming",
+      "title": "Dynamic Programming - Optimization Fundamentals",
+      "level": "Advanced"
+    },
+    {
+      "id": "13",
+      "dir": "13_advanced_sorting",
+      "title": "Advanced Sorting - Efficient & Specialized Algorithms",
+      "level": "Advanced"
+    },
+    {
+      "id": "14",
+      "dir": "14_graph_algorithms",
+      "title": "Graph Algorithms - Advanced Techniques",
+      "level": "Advanced"
+    },
+    {
+      "id": "15",
+      "dir": "15_greedy_algorithms",
+      "title": "Greedy Algorithms - Optimization by Local Choice",
+      "level": "Advanced"
+    },
+    {
+      "id": "16",
+      "dir": "16_bit_manipulation",
+      "title": "Bit Manipulation - Thinking in Binary",
+      "level": "Advanced"
+    },
+    {
+      "id": "17",
+      "dir": "17_advanced_trees",
+      "title": "Advanced Trees - Self-Balancing and Range Queries",
+      "level": "Advanced"
+    },
+    {
+      "id": "18",
+      "dir": "18_trie_string_algorithms",
+      "title": "Tries & String Algorithms - Text at Scale",
+      "level": "Advanced"
+    },
+    {
+      "id": "19",
+      "dir": "19_heaps_priority_queues",
+      "title": "Heaps & Priority Queues - \"Give Me the Best One\"",
+      "level": "Interview Prep"
+    },
+    {
+      "id": "20",
+      "dir": "20_backtracking",
+      "title": "Backtracking - Systematic Search with Undo",
+      "level": "Interview Prep"
+    },
+    {
+      "id": "21",
+      "dir": "21_intervals_matrix",
+      "title": "Intervals & Matrix Patterns - Two Families You Will Be Asked About",
+      "level": "Interview Prep"
+    },
+    {
+      "id": "22",
+      "dir": "22_math_for_interviews",
+      "title": "Math for Interviews - The Number Theory You Actually Need",
+      "level": "Interview Prep"
+    }
+  ]
+}
