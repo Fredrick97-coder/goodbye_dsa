@@ -5,6 +5,10 @@ grades submissions against **its own 377 reference specs**. Nothing is
 duplicated: the problem text is parsed from the `exercise.py` files and the tests
 are the same specs that `python check.py` runs.
 
+A second course — [20 Rosetta Code tasks](#the-rosetta-course), written from
+scratch — brings the total to **362 problems across two courses**, and needed no
+application code beyond making the unlock chain per-course.
+
 ```
 Dashboard  /            rings, streak, heatmap, suggested next, 22 topic tracks
 Problems   /problems    full problem set — status, filters, search, bookmarks
@@ -43,10 +47,10 @@ cd frontend && npm install
 
 | Feature | Status |
 |---|---|
-| 342 problems across 22 topics, four pages, real URLs | ✅ |
+| 362 problems across 26 topics in 2 courses, four pages, real URLs | ✅ |
 | Problem set: status / difficulty / topic / graded / bookmarked filters, all in the URL | ✅ |
 | Starter code pulled from the real `exercise.py` stub | ✅ |
-| Grading against the repo's reference specs | ✅ (340 of 342 problems) |
+| Grading against the repo's reference specs | ✅ (360 of 362 problems) |
 | Per-case results: input / expected / got | ✅ |
 | Randomized trials, not just the fixed examples | ✅ |
 | Verdicts: Accepted / Wrong Answer / Runtime Error / Not Attempted | ✅ |
@@ -63,7 +67,7 @@ cd frontend && npm install
 | `stdout` capture and a Console tab | ✅ |
 | Drafts autosaved per problem, survive refresh | ✅ (localStorage) |
 | Resizable panels, `⌘↵` submit, `⌘'` run | ✅ |
-| TypeScript and JavaScript, graded against the same specs | ✅ 232 of 342 problems |
+| TypeScript and JavaScript, graded against the same specs | ✅ 252 of 362 problems |
 | Adding a language is a driver + a table row | ✅ see below |
 | **Accounts, with per-user progress** | ✅ (scrypt + server-side sessions) |
 | **Browse and Run without an account; the gate is at Submit** | ✅ |
@@ -83,10 +87,10 @@ rows in the language table are visibly disabled with the reason, not a "soon".
 
 Coverage is not uniform, and the UI says so per problem:
 
-| | problems |
-|---|---|
-| Python | **340** of 342 |
-| TypeScript / JavaScript | **232** of 342 |
+| | problems | of which DSA | of which Rosetta |
+|---|---|---|---|
+| Python | **360** of 362 | 340 of 342 | 20 of 20 |
+| TypeScript / JavaScript | **252** of 362 | 232 of 342 | 20 of 20 |
 
 The gap is not laziness — it is what can honestly cross a language boundary. Your
 377 reference specs *are* Python: they call `math.comb`, they drive a `Stack`
@@ -101,6 +105,17 @@ rather than being silently hidden.
 
 A problem is refused rather than partially graded: reporting "8 of 8 passed" when
 two of its functions were never run would be worse than refusing.
+
+**One case can be dropped, though — when the answer will not fit in a float64.**
+Every language here except Python parses JSON numbers into a 64-bit float, so an
+integer past 2⁵³ arrives wrong no matter how correct the solution is.
+`factorial(60)` is 8.3 × 10⁸¹, and it was being sent to TypeScript as an ordinary
+test: 31 of 44 passed, the problem still advertised TypeScript, and no solution
+existed that could have done better. Those cases are now left out of the plan for
+non-Python languages, the stub says how many and why, and Python is still graded
+on all of them. Exactly two targets across 362 problems are affected —
+`24-01 factorial` (29 of 44) and `22-04 power` (4 of 43) — and a test sweeps the
+whole catalogue so the next one is caught here rather than by a learner.
 
 *Types are stripped, not checked.* Node runs `.mts` natively, so
 `function f(n: number): string { return n; }` executes happily. That is what
@@ -217,7 +232,8 @@ Four deliberate choices:
 - **Vite proxies `/api` to the backend**, so the browser sees one origin. No CORS
   in dev, no hardcoded `localhost:8000` in the frontend.
 
-The whole problem list (342 rows, ~90 KB) is fetched once into `app-data.tsx` and
+The whole problem list (362 rows, 171 KB, served uncompressed — gzip would
+make it 16 KB) is fetched once into `app-data.tsx` and
 filtered in memory, so filters and search are instant and page transitions never
 spin.
 
@@ -434,7 +450,9 @@ reviewable in a diff, and `lesson_progress` is the single table reading adds.
 
 **A second course is a directory**, not a code change: drop a `course.json` next
 to `python/` and it appears on the shelf. Nothing in the reader knows about data
-structures — `FORGE_COURSES_ROOT` says where to look.
+structures — `FORGE_COURSES_ROOT` says where to look. That claim is no longer
+hypothetical: `rosetta/` was added without touching the loader, the reader, the
+grader or the frontend (see below).
 
 ```json
 { "id": "system-design", "title": "System Design",
@@ -457,6 +475,63 @@ Worked examples go through the *same* isolated runner as a submission, so there 
 no second execution path to secure, and a demo that hangs is contained by the same
 limits. Output is capped at `FORGE_EXEC_MAX_STDOUT_BYTES` (64 KB) and truncation
 says so — at the old 8 KB cap, topic 22's examples were silently cut in half.
+
+## The Rosetta course
+
+The second course, at `rosetta/` — **20 tasks, 17 lessons, 4 modules** (23–26),
+practisable in Python, TypeScript and JavaScript.
+
+```
+rosetta/
+├── course.json          id "rosetta", modules 23–26
+├── 23_warm_up/          FizzBuzz · leap year · multiples of 3 and 5 · lower-case
+│   ├── theory.md        alphabet · 100 doors
+│   ├── examples.py
+│   └── exercise.py
+├── 24_numbers/          factorial · GCD · LCM · hailstone · happy numbers
+├── 25_strings/          substring count · letter frequency · balanced brackets ·
+│                        comma quibbling · word wrap
+└── 26_sequences/        Fibonacci · equilibrium index · longest increasing
+                         subsequence · spiral matrix · zig-zag matrix
+```
+
+Adding it needed **no application code** beyond making the problem chain
+per-course. `loader.course_roots()` already scanned siblings for a `course.json`;
+the spec range was widened past topic 22; that was the whole integration.
+
+### Why the content is original
+
+The obvious route — import the 160 freeCodeCamp Rosetta Code challenges — does
+not survive a licence check:
+
+* freeCodeCamp's **`/curriculum` directory is "copyright © 2014
+  freeCodeCamp.org"**. Its BSD-3 licence covers *"the computer software"*; the
+  challenge text and tests are content, not software.
+* **rosettacode.org is GFDL 1.2**, which is copyleft and demands the full licence
+  text be carried along with any reuse.
+
+So no description, no test case and no wording was copied from either. The task
+*names* are the names of classic programming exercises — "FizzBuzz", "greatest
+common divisor" — which is not what copyright attaches to. Every statement,
+lesson, example and test in `rosetta/` was written for this repo, and
+`course.json` carries an `attribution` field recording exactly that, so the next
+person does not have to re-derive it.
+
+Twenty finished tasks, not 160 thin ones, was the deliberate call: each one has a
+lesson behind it, worked examples, and a reference implementation graded the same
+way as the DSA course.
+
+### The two courses are independent runs
+
+Each course has **its own chain**. Solving through DSA does not unlock Rosetta
+tasks and vice versa — a learner starting Rosetta begins at 23-01 with `dsa`
+still sitting at 01-01. `/api/problems/chain?course=rosetta` reports its own
+length (20, against the DSA course's 342).
+
+The prev/next arrows in the solve view are scoped the same way. They used to walk
+a flat list of all 362 ids, which put Rosetta task 23-01 one arrow-click past the
+last DSA problem — a different subject presented as "the next exercise". The last
+problem of a course now has no next.
 
 ## Progressive unlocking
 
@@ -564,7 +639,7 @@ So adding Go looks like this:
    `docker/build.sh`.
 
 You do **not** touch: the API, the frontend, the executors, the specs, or any of
-the 342 problems. Starter code for every portable problem is generated from the
+the 362 problems. Starter code for every portable problem is generated from the
 inferred signature the moment the row is live, which is why enabling JavaScript
 cost one table entry and zero lines of new code.
 
@@ -638,8 +713,10 @@ test happened to create, and would never exercise the migration path. Tests that
 assert engine internals are marked `@sqlite_only` / `@postgres_only` and **state
 the reason when they skip**, so a green run cannot hide an unexercised backend.
 
-Current status: **188 passed, 1 skipped** on SQLite; **186 passed, 3 skipped** on
-Postgres.
+Current status: **195 passed, 1 skipped** on SQLite; **193 passed, 3 skipped** on
+Postgres (17.10). The skips are the three `@sqlite_only` tests — `user_version`,
+the pragmas, and the file-copy backup — plus the one `@postgres_only` test in the
+other direction.
 
 ### Backups
 

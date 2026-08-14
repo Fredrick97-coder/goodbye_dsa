@@ -252,6 +252,7 @@ def _problem_dict(p: Problem, with_detail: bool = False) -> Dict[str, Any]:
         "tested": bool(specs),
         "testCount": len(specs),
         "drillable": p.drillable,
+        "courseId": _course_of_topic(p.topic),
     }
     support = problem_support(p.topic, p.num, specs)
     data["portable"] = bool(support["portable"])
@@ -268,6 +269,16 @@ def _problem_dict(p: Problem, with_detail: bool = False) -> Dict[str, Any]:
             "languageNotes": _language_notes(support),
         })
     return data
+
+
+@lru_cache(maxsize=64)
+def _course_of_topic(topic: int) -> str:
+    """Which course claims this topic number, per the manifests."""
+    from . import content
+    for course in content.all_courses():
+        if f"{topic:02d}" in {m.id for m in course.modules}:
+            return course.id
+    return "dsa"
 
 
 def _languages_for(support: Dict[str, Any]) -> List[str]:
@@ -337,7 +348,7 @@ def _starters(p: Problem, specs: List[Any],
             problem_plan, _exercise_source(p.topic))
     except Exception:                                       # noqa: BLE001
         return out
-    notes = {t["name"]: t.get("note", "") for t in problem_plan["targets"]}
+    notes = {t["name"]: _starter_note(t) for t in problem_plan["targets"]}
     for entry in _languages.status():
         lang = _languages.get(entry["id"])
         if entry["id"] == "python" or lang is None or not lang.implemented:
@@ -347,6 +358,24 @@ def _starters(p: Problem, specs: List[Any],
         except Exception:                                   # noqa: BLE001
             continue
     return out
+
+
+def _starter_note(target: Dict[str, Any]) -> str:
+    """
+    The author's hint, plus anything this language will not be graded on.
+
+    A learner writing TypeScript for `factorial` is graded on 15 cases where
+    Python faces 44, because the other 29 answers do not fit in a float64.
+    Saying so in the stub beats letting them wonder why the counts differ.
+    """
+    note = target.get("note", "")
+    skipped = target.get("skipped", 0)
+    if skipped:
+        extra = (f"{skipped} test{'s' if skipped != 1 else ''} are skipped in "
+                 f"this language: the answers are larger than a 64-bit float "
+                 f"can hold exactly. Python is graded on all of them.")
+        note = f"{note}\n{extra}" if note else extra
+    return note
 
 
 def _conventions(specs: List[Any]) -> List[str]:
@@ -460,8 +489,15 @@ def neighbors(problem_id: str) -> Dict[str, Optional[str]]:
     Ordering follows the catalogue, so "next" means the next problem in the
     course rather than the next id numerically -- topics do not all have the
     same number of problems.
+
+    **Scoped to one course.** With a second course on the shelf, walking the
+    flat id list would step off the end of the DSA course straight into Rosetta
+    task 23-01 -- a different subject, a different chain, and an arrow the
+    learner cannot get back from except by pressing the other arrow. The last
+    problem of a course has no next, which is what "end of the course" means.
     """
-    ids = problem_ids()
+    from . import progression                      # lazy: progression uses repo
+    ids = list(progression.course_problem_ids(progression.course_of(problem_id)))
     try:
         i = ids.index(problem_id)
     except ValueError:

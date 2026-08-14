@@ -70,24 +70,27 @@ def _lock_index(user_id: Optional[str]) -> Dict[str, Optional[str]]:
     if not settings.progression:
         return {}
 
-    chain = progression.problem_chain(user_id)
-    if chain.frontier is None:
-        return {}
-
-    order = {pid: i for i, pid in enumerate(chain.unlocked)}
-    frontier_at = order.get(chain.frontier, 0)
     out: Dict[str, Optional[str]] = {}
-    for pid, is_open in chain.unlocked.items():
-        if is_open:
+    # One chain per course: the courses are separate runs, so a Rosetta task
+    # must not sit behind 342 DSA problems.
+    for course in content.all_courses():
+        chain = progression.problem_chain(user_id, course.id)
+        if chain.frontier is None:
             continue
-        if user_id is None:
-            out[pid] = ("sign in to track your progress — problems unlock one "
-                        "at a time as you solve them")
-            continue
-        ahead = order.get(pid, 0) - frontier_at
-        out[pid] = (f"solve {chain.frontier} to unlock this one" if ahead <= 1
-                    else f"solve {chain.frontier} next — {ahead} problems "
-                         f"stand between it and this one")
+        order = {pid: i for i, pid in enumerate(chain.unlocked)}
+        frontier_at = order.get(chain.frontier, 0)
+        for pid, is_open in chain.unlocked.items():
+            if is_open:
+                continue
+            if user_id is None:
+                out[pid] = ("sign in to track your progress — problems unlock "
+                            "one at a time as you solve them")
+                continue
+            ahead = order.get(pid, 0) - frontier_at
+            out[pid] = (f"solve {chain.frontier} to unlock this one"
+                        if ahead <= 1
+                        else f"solve {chain.frontier} next — {ahead} problems "
+                             f"stand between it and this one")
     return out
 
 

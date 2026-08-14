@@ -110,6 +110,18 @@ def stub_for(signature: Dict[str, Any], lang: Language, note: str = "") -> str:
 
 
 def _wrap(text: str, width: int) -> List[str]:
+    """
+    Wrap to `width`, keeping any line break the caller wrote.
+
+    Without this a note built from two sentences ran them together -- "0! is 1
+    -- the empty product 29 tests are skipped in this language" -- which reads
+    as one broken sentence.
+    """
+    if "\n" in text:
+        out: List[str] = []
+        for para in text.split("\n"):
+            out.extend(_wrap(para, width) if para.strip() else [""])
+        return out
     words, lines, current = text.split(), [], ""
     for word in words:
         if len(current) + len(word) + 1 > width:

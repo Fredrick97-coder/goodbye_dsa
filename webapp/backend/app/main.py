@@ -413,17 +413,19 @@ def unlock_problem(problem_id: str, request: Request,
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             f"no problem {problem_id}")
     store.grant_problem(user["id"], problem_id, reason="skipped")
-    chain = progression.problem_chain(user["id"])
+    chain = progression.problem_chain(user["id"],
+                                      progression.course_of(problem_id))
     return {"unlocked": True, "problemId": problem_id,
             "next": chain.frontier, "solved": chain.position,
             "total": chain.total}
 
 
 @app.get("/api/problems/chain")
-def problem_chain(user: Optional[Dict[str, Any]] = Depends(auth.current_user_optional),
+def problem_chain(course: str = "dsa",
+                  user: Optional[Dict[str, Any]] = Depends(auth.current_user_optional),
                   ) -> Dict[str, Any]:
-    """Where the learner is in the run: what is next, and how far along."""
-    chain = progression.problem_chain(user["id"] if user else None)
+    """Where the learner is in this course's run: what is next, and how far."""
+    chain = progression.problem_chain(user["id"] if user else None, course)
     nxt = repo.problem_detail(chain.frontier) if chain.frontier else None
     return {
         "next": ({"id": chain.frontier, "title": nxt["title"],
@@ -431,6 +433,7 @@ def problem_chain(user: Optional[Dict[str, Any]] = Depends(auth.current_user_opt
                  if nxt else None),
         "solved": chain.position,
         "total": chain.total,
+        "courseId": course,
         "enabled": bool(settings.progression),
     }
 

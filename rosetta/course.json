@@ -1,0 +1,25 @@
+{
+  "id": "rosetta",
+  "title": "Rosetta Code Challenges",
+  "subtitle": "Classic programming tasks, each solvable in every language the platform runs. Short, self-contained, and graded the same way whichever one you pick.",
+  "language": "python",
+  "practiceLanguages": ["python", "typescript", "javascript"],
+  "levels": ["Warm-up", "Numbers", "Strings", "Sequences"],
+  "theoryFile": "theory.md",
+  "examplesFile": "examples.py",
+  "exercisesFile": "exercise.py",
+  "projectFile": "project.py",
+  "attribution": "Task names are the long-standing titles used across the Rosetta Code community and elsewhere; a task name is an idea, not protected text. Every description, every hint and every test in this course is written for this platform. No text or test from freeCodeCamp or rosettacode.org is reproduced -- freeCodeCamp's curriculum is 'copyright (c) 2014 freeCodeCamp.org' with no reuse grant, and Rosetta Code's own content is GFDL 1.2.",
+  "progression": {
+    "enabled": true,
+    "requireLessons": 1.0,
+    "requireProblems": 0.4,
+    "note": "Short course, same rule as DSA: read the module and clear 40% of its tasks."
+  },
+  "modules": [
+    { "id": "23", "dir": "23_warm_up",  "title": "Warm-up",   "level": "Warm-up" },
+    { "id": "24", "dir": "24_numbers",  "title": "Numbers",   "level": "Numbers" },
+    { "id": "25", "dir": "25_strings",  "title": "Strings",   "level": "Strings" },
+    { "id": "26", "dir": "26_sequences","title": "Sequences", "level": "Sequences" }
+  ]
+}

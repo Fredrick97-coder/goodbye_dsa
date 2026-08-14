@@ -56,6 +56,25 @@ TRIALS = 40
 SEED = 8_675_309
 
 
+#: Beyond this, a float64 cannot hold an integer exactly -- and every language
+#: here except Python parses JSON numbers into float64. `math.factorial(60)`
+#: serialises fine and comes back off by millions.
+SAFE_INTEGER = 2 ** 53
+
+
+def _needs_bignum(value: Any) -> bool:
+    """Does this value contain an integer no float64 can represent exactly?"""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return abs(value) > SAFE_INTEGER
+    if isinstance(value, (list, tuple)):
+        return any(_needs_bignum(v) for v in value)
+    if isinstance(value, dict):
+        return any(_needs_bignum(v) for v in value.values())
+    return False
+
+
 def _jsonable(value: Any) -> bool:
     try:
         json.dumps(value)
@@ -117,11 +136,21 @@ def _tuples_to_lists(value: Any) -> Any:
     return value
 
 
-def plan_for_spec(sp: Spec) -> Optional[Dict[str, Any]]:
-    """One target's cases, with expected answers computed by the Python ref."""
+def plan_for_spec(sp: Spec) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    One target's cases, with expected answers computed by the Python ref.
+
+    Returns `(plan, reason_it_was_excluded)` -- exactly one is None.
+
+    **Cases needing arbitrary precision are dropped rather than failed.**
+    `factorial(60)` is 8.3e81; no correct JavaScript solution using `number`
+    can return it, so the case would test the language rather than the learner,
+    and it would be an unpassable test presented as a normal one. Python still
+    runs the specs directly and is graded on every case.
+    """
     mode, reason = portability(sp)
     if mode is None:
-        return None
+        return None, reason
 
     cases: List[Dict[str, Any]] = []
 
@@ -142,8 +171,13 @@ def plan_for_spec(sp: Spec) -> Optional[Dict[str, Any]]:
             cases.append({"args": _tuples_to_lists(list(args)),
                           "expected": _tuples_to_lists(want)})
 
-    if not cases:
-        return None
+    keep = [c for c in cases
+            if not (_needs_bignum(c["args"]) or _needs_bignum(c["expected"]))]
+    skipped = len(cases) - len(keep)
+
+    if not keep:
+        return None, ("every answer is larger than a 64-bit float can hold "
+                      "exactly, so only Python can grade this one")
 
     return {
         "name": sp.target,
@@ -151,8 +185,9 @@ def plan_for_spec(sp: Spec) -> Optional[Dict[str, Any]]:
         "tol": sp.tol,
         "inplace": bool(sp.inplace),
         "note": sp.note or "",
-        "cases": cases,
-    }
+        "skipped": skipped,
+        "cases": keep,
+    }, None
 
 
 def plan_for_problem(topic: int, num: int, specs: List[Spec]) -> Dict[str, Any]:
@@ -169,9 +204,8 @@ def plan_for_problem(topic: int, num: int, specs: List[Spec]) -> Dict[str, Any]:
     for sp in specs:
         if sp.num != num:
             continue
-        plan = plan_for_spec(sp)
+        plan, reason = plan_for_spec(sp)
         if plan is None:
-            _, reason = portability(sp)
             excluded.append({"name": sp.target,
                              "reason": reason or "not portable"})
         else:

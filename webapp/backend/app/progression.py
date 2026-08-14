@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from . import content, store
@@ -262,7 +263,34 @@ class ChainState:
     total: int
 
 
-def problem_chain(user_id: Optional[str]) -> ChainState:
+def course_of(problem_id: str) -> str:
+    """
+    Which course owns this problem, from the module id in front of the dash.
+
+    Courses claim disjoint module ranges, so the prefix is enough -- and the
+    manifest is the authority rather than a hardcoded range here.
+    """
+    module = str(problem_id).split("-")[0]
+    for course in content.all_courses():
+        if module in {m.id for m in course.modules}:
+            return course.id
+    return "dsa"
+
+
+@lru_cache(maxsize=8)
+def course_problem_ids(course_id: str) -> tuple:
+    """This course's problems, in curriculum order."""
+    from . import repo
+    course = content.get(course_id)
+    if course is None:
+        return tuple(repo.problem_ids())
+    owned = {m.id for m in course.modules}
+    return tuple(pid for pid in repo.problem_ids()
+                 if pid.split("-")[0] in owned)
+
+
+def problem_chain(user_id: Optional[str],
+                  course_id: str = "dsa") -> ChainState:
     """
     One linear run through every problem, in curriculum order.
 
@@ -274,16 +302,14 @@ def problem_chain(user_id: Optional[str]) -> ChainState:
     to read its lessons should not silently mark twelve problems done and jump
     the chain past them -- it opens them to be attempted, nothing more.
     """
-    from . import repo
-
-    order = repo.problem_ids()
+    order = list(course_problem_ids(course_id))
     if not settings.progression:
         every = {pid: True for pid in order}
         return ChainState(every, dict(every), None, len(order), len(order))
 
     statuses = store.statuses(user_id) if user_id else {}
     granted = store.granted_problems(user_id) if user_id else set()
-    module_granted = (store.granted_modules(user_id, "dsa")
+    module_granted = (store.granted_modules(user_id, course_id)
                       if user_id else set())
     ungraded = _ungraded()
 
@@ -328,7 +354,7 @@ def problem_locked(problem_id: str, user_id: Optional[str]) -> Optional[str]:
     """
     if not settings.progression:
         return None
-    chain = problem_chain(user_id)
+    chain = problem_chain(user_id, course_of(problem_id))
     if chain.unlocked.get(problem_id, True):
         return None
 
@@ -339,7 +365,7 @@ def problem_locked(problem_id: str, user_id: Optional[str]) -> Optional[str]:
     if chain.frontier is None:
         return "finish the earlier problems first"
 
-    order = _order_index()
+    order = {pid: i for i, pid in enumerate(chain.unlocked)}
     ahead = order.get(problem_id, 0) - order.get(chain.frontier, 0)
     if ahead <= 1:
         return f"solve {chain.frontier} to unlock this one"

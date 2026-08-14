@@ -391,13 +391,48 @@ def test_resume_never_points_at_a_locked_lesson(account):
                     f"/lessons/{target['slug']}/done", json={"done": True})
 
 
+def _open_in(problems, course_id):
+    return [p["id"] for p in problems
+            if not p["locked"] and p["courseId"] == course_id]
+
+
 def test_only_the_first_problem_is_open_on_a_fresh_account(account):
-    """Problems are a single ordered run: exactly one is open at a time."""
+    """
+    Each course is its own ordered run, so each has exactly one problem open.
+
+    Asserting globally was wrong once a second course existed -- it would have
+    demanded that Rosetta sit behind all 342 DSA problems, which is the opposite
+    of them being separate.
+    """
     client, _, _ = account
     problems = client.get("/api/problems").json()
-    open_ids = [p["id"] for p in problems if not p["locked"]]
-    assert open_ids == ["01-01"]
+    assert _open_in(problems, "dsa") == ["01-01"]
+    assert _open_in(problems, "rosetta") == ["23-01"]
     assert all(p["lockedReason"] for p in problems if p["locked"])
+
+
+def test_the_two_courses_advance_independently(account):
+    """Solving in DSA must not move the Rosetta chain, or vice versa."""
+    client, _, _ = account
+    client.post("/api/submit", json={
+        "problemId": "23-01", "language": "python",
+        "source": ("def fizzbuzz(n):\n"
+                   "    return ['FizzBuzz' if i%15==0 else 'Fizz' if i%3==0 "
+                   "else 'Buzz' if i%5==0 else str(i) for i in range(1,n+1)]\n"),
+        "mode": "test"})
+
+    assert client.get("/api/problems/chain?course=rosetta").json()["next"]["id"] == "23-02"
+    assert client.get("/api/problems/chain?course=dsa").json()["next"]["id"] == "01-01"
+
+    problems = client.get("/api/problems").json()
+    assert _open_in(problems, "rosetta") == ["23-01", "23-02"]
+    assert _open_in(problems, "dsa") == ["01-01"]
+
+
+def test_each_course_reports_its_own_chain_length(account):
+    client, _, _ = account
+    assert client.get("/api/problems/chain?course=dsa").json()["total"] == 342
+    assert client.get("/api/problems/chain?course=rosetta").json()["total"] == 20
 
 
 def test_solving_one_problem_opens_exactly_the_next(account):
@@ -410,7 +445,7 @@ def test_solving_one_problem_opens_exactly_the_next(account):
     assert res.json()["summary"]["verdict"] == "accepted"
 
     problems = client.get("/api/problems").json()
-    assert [p["id"] for p in problems if not p["locked"]] == ["01-01", "01-02"]
+    assert _open_in(problems, "dsa") == ["01-01", "01-02"]
     assert client.get("/api/problems/chain").json()["next"]["id"] == "01-02"
 
 
@@ -421,7 +456,7 @@ def test_a_wrong_answer_does_not_advance_the_chain(account):
         "source": "def find_max(arr):\n    return 0\n", "mode": "test"})
     assert client.get("/api/problems/chain").json()["next"]["id"] == "01-01"
     problems = client.get("/api/problems").json()
-    assert [p["id"] for p in problems if not p["locked"]] == ["01-01"]
+    assert _open_in(problems, "dsa") == ["01-01"]
 
 
 def test_you_cannot_jump_ahead_in_the_chain(account):
@@ -443,7 +478,7 @@ def test_skipping_a_problem_advances_the_chain(account):
     res = client.post("/api/problems/01-01/unlock").json()
     assert res["unlocked"] is True and res["next"] == "01-02"
     problems = client.get("/api/problems").json()
-    assert [p["id"] for p in problems if not p["locked"]] == ["01-01", "01-02"]
+    assert _open_in(problems, "dsa") == ["01-01", "01-02"]
 
 
 def test_an_ungraded_problem_cannot_wall_the_chain(account):
@@ -465,11 +500,26 @@ def test_an_ungraded_problem_cannot_wall_the_chain(account):
     assert chain.frontier == "01-11"
 
 
-def test_signed_out_sees_only_the_first_problem(client):
+def test_signed_out_sees_only_the_first_problem_of_each_course(client):
     problems = client.get("/api/problems").json()
-    assert [p["id"] for p in problems if not p["locked"]] == ["01-01"]
+    assert _open_in(problems, "dsa") == ["01-01"]
+    assert _open_in(problems, "rosetta") == ["23-01"]
     locked = next(p for p in problems if p["locked"])
     assert "sign in" in locked["lockedReason"]
+
+
+def test_the_rosetta_course_is_on_the_shelf(client):
+    """A course is a directory with a manifest -- no code change was needed."""
+    courses = {c["id"]: c for c in client.get("/api/courses").json()}
+    assert "rosetta" in courses
+    rosetta = courses["rosetta"]
+    assert rosetta["moduleCount"] == 4
+    assert set(rosetta["practiceLanguages"]) >= {"python", "typescript"}
+
+    detail = client.get("/api/courses/rosetta").json()
+    assert [m["id"] for m in detail["modules"]] == ["23", "24", "25", "26"]
+    assert sum(m["problemTotal"] for m in detail["modules"]) == 20
+    assert sum(m["lessonCount"] for m in detail["modules"]) > 0
 
 
 def test_progression_can_be_switched_off(monkeypatch, account):
@@ -485,3 +535,36 @@ def test_progression_can_be_switched_off(monkeypatch, account):
         assert not any(p["locked"] for p in problems)
     finally:
         object.__setattr__(config.settings, "progression", True)
+
+
+def test_the_next_arrow_stops_at_the_end_of_a_course(client):
+    """
+    The prev/next arrows must not step from one course into another.
+
+    They walked a flat list of every problem id, so the arrow on the last DSA
+    problem led to Rosetta task 23-01 -- a different subject and a different
+    chain, reachable only by an arrow that looked like "the next exercise".
+    """
+    from app import content, progression, repo
+    dsa_modules = {m.id for m in content.get("dsa").modules}
+    dsa_last = [p for p in repo.problem_ids()
+                if p.split("-")[0] in dsa_modules][-1]
+    assert progression.course_of("23-01") == "rosetta"
+    assert repo.neighbors(dsa_last)["nextId"] is None
+    assert repo.neighbors("23-01")["prevId"] is None
+
+    # ...and inside a course they still chain.
+    assert repo.neighbors("23-01")["nextId"] == "23-02"
+    assert repo.neighbors("01-02")["prevId"] == "01-01"
+    assert repo.neighbors(repo.problem_ids()[-1])["nextId"] is None
+
+
+def test_the_rosetta_modules_ship_runnable_examples(client):
+    """
+    The manifest names an examples file, so the module page offers to run it.
+
+    Promising examples and shipping none leaves a button that does nothing.
+    """
+    detail = client.get("/api/courses/rosetta").json()
+    assert all(m["hasExamples"] for m in detail["modules"]), \
+        [m["id"] for m in detail["modules"] if not m["hasExamples"]]

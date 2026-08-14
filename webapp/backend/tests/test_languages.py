@@ -301,3 +301,47 @@ def test_comparison_modes_match_the_python_normalisers(tmp_path):
                           timeout=60)
     report = json.loads(proc.stdout)
     assert report["targets"][0]["status"] == "PASS", report["targets"][0]
+
+
+def test_cases_needing_bignums_are_dropped_not_failed(client):
+    """
+    A case no float64 can express must not be handed to a float64 language.
+
+    `factorial(60)` is 8.3e81. Serialising it into the plan produced a test no
+    correct JavaScript solution could ever pass -- it tested the language, not
+    the learner, and the problem still advertised TypeScript.
+    """
+    from app import repo
+    from _harness.fixtures import SAFE_INTEGER, _needs_bignum
+
+    plan = repo.plan(24, 1)
+    target = plan["targets"][0]
+    assert target["name"] == "factorial"
+    assert target["skipped"] > 0, "the big cases should have been dropped"
+    assert not any(_needs_bignum(c["expected"]) or _needs_bignum(c["args"])
+                   for c in target["cases"])
+    assert all(abs(c["expected"]) <= SAFE_INTEGER for c in target["cases"])
+
+    # The problem is still offered in TypeScript, and says what was dropped.
+    detail = client.get("/api/problems/24-01?language=typescript").json()
+    assert "typescript" in detail["languages"]
+    assert "skipped in this language" in detail["starterCode"]["typescript"]
+
+
+def test_no_graded_target_smuggles_an_unrepresentable_case(client):
+    """
+    The rule holds for the whole catalogue, not just the one that exposed it.
+
+    Written as a sweep so a future spec with big integers is caught here rather
+    than by a learner staring at an unpassable test.
+    """
+    from app import repo
+    from _harness.fixtures import _needs_bignum
+
+    offenders = []
+    for p in repo.all_problems():
+        for target in repo.plan(p.topic, p.num)["targets"]:
+            if any(_needs_bignum(c["expected"]) or _needs_bignum(c["args"])
+                   for c in target["cases"]):
+                offenders.append(f"{p.topic:02d}-{p.num:02d} {target['name']}")
+    assert offenders == [], offenders

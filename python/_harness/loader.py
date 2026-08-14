@@ -21,19 +21,51 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = ROOT.parent
 
 TOPIC_RE = re.compile(r"^(\d{2})_")
 
 
-def topic_dirs() -> Dict[int, Path]:
-    """{topic_number: directory} for every NN_* folder that has an exercise.py."""
-    out: Dict[int, Path] = {}
-    for p in sorted(ROOT.iterdir()):
-        if not p.is_dir():
+def course_roots() -> List[Path]:
+    """
+    Every directory that is a course: one holding a `course.json`.
+
+    The harness started life scanning only `python/`, but the platform hosts
+    more than one course now. A manifest is the marker rather than a hardcoded
+    list, so adding a course stays a directory rather than a code change --
+    the same rule the web app's content loader follows.
+    """
+    roots = [ROOT] if ROOT.is_dir() else []
+    for sibling in sorted(REPO_ROOT.iterdir()):
+        if sibling == ROOT or not sibling.is_dir():
             continue
-        m = TOPIC_RE.match(p.name)
-        if m and (p / "exercise.py").exists():
-            out[int(m.group(1))] = p
+        if (sibling / "course.json").exists():
+            roots.append(sibling)
+    return roots
+
+
+def topic_dirs() -> Dict[int, Path]:
+    """
+    {topic_number: directory} for every NN_* folder that has an exercise.py.
+
+    Numbers are global across courses, because a problem id (`NN-MM`) is stored
+    on every submission and appears in every URL. Courses claim disjoint ranges
+    -- DSA holds 01-22 -- so a second course does not disturb the first.
+    """
+    out: Dict[int, Path] = {}
+    for root in course_roots():
+        for p in sorted(root.iterdir()):
+            if not p.is_dir():
+                continue
+            m = TOPIC_RE.match(p.name)
+            if m and (p / "exercise.py").exists():
+                number = int(m.group(1))
+                if number in out:
+                    raise RuntimeError(
+                        f"topic number {number:02d} is claimed twice: "
+                        f"{out[number]} and {p}. Courses must use disjoint "
+                        f"ranges, because problem ids are global.")
+                out[number] = p
     return out
 
 

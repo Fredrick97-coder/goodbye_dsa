@@ -13,7 +13,10 @@ from typing import Dict, List
 
 from ..spec import Spec
 
-_MODULES = [f"t{n:02d}" for n in range(1, 23)]
+#: Spec modules are numbered to match topic numbers, which are global across
+#: courses. The range is generous so a new course's specs are picked up by
+#: existing them, not by editing this line.
+_MODULES = [f"t{n:02d}" for n in range(1, 60)]
 
 
 def load_all() -> Dict[int, List[Spec]]:
