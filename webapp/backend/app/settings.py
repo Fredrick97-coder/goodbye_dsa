@@ -143,6 +143,11 @@ class Settings:
 
     # ---------------------------------------------------------------- store
     db_path: Path
+    #: Postgres connection URL. When set, it is used instead of `db_path` and
+    #: the whole store runs on Postgres.
+    database_url: Optional[str]
+    db_pool_min: int
+    db_pool_max: int
     db_timeout: float                # seconds to wait on a locked database
     db_busy_retries: int
     wal: bool
@@ -259,6 +264,9 @@ def _load() -> Settings:
         debug=_flag("DEBUG", env == "dev"),
 
         db_path=Path(_env("DB_PATH", str(default_db))).expanduser(),
+        database_url=_env("DATABASE_URL"),
+        db_pool_min=_int("DB_POOL_MIN", 1, minimum=0, maximum=64),
+        db_pool_max=_int("DB_POOL_MAX", 8, minimum=1, maximum=256),
         db_timeout=_float("DB_TIMEOUT", 10.0, minimum=0.1),
         db_busy_retries=_int("DB_BUSY_RETRIES", 4, minimum=0, maximum=20),
         wal=_flag("DB_WAL", True),
@@ -398,7 +406,9 @@ def summary() -> dict:
     return {
         "env": settings.env,
         "executor": settings.resolved_executor or settings.executor,
-        "dbPath": str(settings.db_path),
+        "dbPath": (settings.database_url.split("@")[-1]
+                   if settings.database_url else str(settings.db_path)),
+        "dbBackend": "postgres" if settings.database_url else "sqlite",
         "sessionDays": settings.session_days,
         "cookieSameSite": settings.cookie_samesite,
         "cookieSecure": "auto" if settings.cookie_secure is None

@@ -44,6 +44,7 @@ def cmd_check() -> int:
     print(json.dumps(db.stats(), indent=2))
 
     have = executors.availability()
+    print(f"\ndatabase: {db.backend.name}")
     print("\nlanguages:")
     for entry in languages.status():
         mark = "available" if entry["available"] else "unavailable"

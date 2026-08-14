@@ -14,7 +14,6 @@ refactor away from showing one account's progress to another.
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -50,7 +49,7 @@ def create_user(user_id: str, email: str, name: str,
                 "INSERT INTO users (id, email, name, password_hash, created_at)"
                 " VALUES (?,?,?,?,?)",
                 (user_id, email, name, password_hash, now))
-        except sqlite3.IntegrityError as exc:
+        except db.IntegrityError as exc:
             raise EmailTaken(email) from exc
     return {"id": user_id, "email": email, "name": name, "created_at": now,
             "password_hash": password_hash, "last_login_at": None}
@@ -89,7 +88,8 @@ def mark_login(user_id: str) -> None:
 
 def user_count() -> int:
     with db.reading() as conn:
-        return int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
+        row = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()
+        return int(row["n"])
 
 
 # --------------------------------------------------------- lesson progress
@@ -215,8 +215,14 @@ def create_session(token_hash: str, user_id: str, ttl_seconds: int,
     now = time.time()
     with db.transaction() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO sessions (token_hash, user_id, created_at,"
-            " touched_at, expires_at, user_agent) VALUES (?,?,?,?,?,?)",
+            # ON CONFLICT rather than INSERT OR REPLACE, which is SQLite-only.
+            "INSERT INTO sessions (token_hash, user_id, created_at,"
+            " touched_at, expires_at, user_agent) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT (token_hash) DO UPDATE SET "
+            "user_id = excluded.user_id, created_at = excluded.created_at, "
+            "touched_at = excluded.touched_at, "
+            "expires_at = excluded.expires_at, "
+            "user_agent = excluded.user_agent",
             (token_hash, user_id, now, now, now + ttl_seconds, user_agent))
         # Opportunistic cleanup: expired rows are dead weight and this is the
         # one moment we are already holding a write connection.
@@ -258,9 +264,11 @@ def delete_user_sessions(user_id: str, keep_token_hash: str = "") -> int:
 
 def session_count(user_id: str) -> int:
     with db.reading() as conn:
-        return int(conn.execute(
-            "SELECT COUNT(*) FROM sessions WHERE user_id = ? AND expires_at > ?",
-            (user_id, time.time())).fetchone()[0])
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM sessions "
+            "WHERE user_id = ? AND expires_at > ?",
+            (user_id, time.time())).fetchone()
+        return int(row["n"])
 
 
 # --------------------------------------------------------------- submissions
@@ -279,18 +287,20 @@ def record_submission(user: str, problem_id: str, language: str, source: str,
     if verdict not in KEEP_VERDICTS:
         return None
     with db.transaction() as conn:
-        cur = conn.execute(
+        # RETURNING rather than `cursor.lastrowid`, which is SQLite-only and has
+        # no psycopg equivalent. Both engines support it (SQLite since 3.35).
+        row = conn.execute(
             "INSERT INTO submissions (user_id, problem_id, language, source, "
             "verdict, passed, total, elapsed_ms, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
             (user, problem_id, language, source, verdict,
              int(summary.get("passed", 0)), int(summary.get("total", 0)),
              float(elapsed_ms), time.time()),
-        )
-        return int(cur.lastrowid or 0)
+        ).fetchone()
+        return int(row["id"]) if row else 0
 
 
-def _row_to_submission(row: sqlite3.Row, with_source: bool) -> Dict[str, Any]:
+def _row_to_submission(row: Any, with_source: bool) -> Dict[str, Any]:
     out = {
         "id": row["id"],
         "problemId": row["problem_id"],
@@ -341,7 +351,10 @@ def statuses(user: str) -> Dict[str, str]:
     """
     with db.reading() as conn:
         rows = conn.execute(
-            "SELECT problem_id, MAX(verdict = 'accepted') AS ok "
+            # CASE rather than MAX(verdict = 'accepted'): that expression is a
+            # SQLite-ism, because Postgres has no MAX() over booleans.
+            "SELECT problem_id, MAX(CASE WHEN verdict = 'accepted' THEN 1 "
+            "ELSE 0 END) AS ok "
             "FROM submissions WHERE user_id = ? GROUP BY problem_id",
             (user,)).fetchall()
     return {r["problem_id"]: ("solved" if r["ok"] else "attempted")
@@ -511,20 +524,20 @@ def count_attempts(bucket: str, client: str) -> int:
     since = time.time() - settings.rate_window_seconds
     with db.reading() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) FROM auth_attempts "
+            "SELECT COUNT(*) AS n FROM auth_attempts "
             "WHERE bucket = ? AND client = ? AND created_at >= ?",
             (bucket, client, since)).fetchone()
-    return int(row[0]) if row else 0
+    return int(row["n"]) if row else 0
 
 
 def oldest_attempt(bucket: str, client: str) -> Optional[float]:
     since = time.time() - settings.rate_window_seconds
     with db.reading() as conn:
         row = conn.execute(
-            "SELECT MIN(created_at) FROM auth_attempts "
+            "SELECT MIN(created_at) AS oldest FROM auth_attempts "
             "WHERE bucket = ? AND client = ? AND created_at >= ?",
             (bucket, client, since)).fetchone()
-    return row[0] if row and row[0] is not None else None
+    return row["oldest"] if row and row["oldest"] is not None else None
 
 
 def clear_attempts(bucket: str, client: str) -> None:

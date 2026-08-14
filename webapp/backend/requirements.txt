@@ -1,3 +1,6 @@
 fastapi>=0.110
 uvicorn[standard]>=0.27
 pydantic>=2.6
+
+# Postgres is optional: SQLite is built into Python. To use it, also install
+#   pip install -r requirements-postgres.txt

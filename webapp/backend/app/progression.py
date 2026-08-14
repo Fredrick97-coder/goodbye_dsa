@@ -224,8 +224,8 @@ def locked_reason(course: content.Course, module_id: str,
 
     if frontier.id == ids[ids.index(module_id) - 1]:
         return f"module {module_id} opens after {detail} in module {frontier.id}"
-    return (f"continue from module {frontier.id} -- {detail} there, then keep "
-            f"going to reach module {module_id}")
+    return (f"continue from module {frontier.id} — {detail} there, then "
+            f"keep going to reach module {module_id}")
 
 
 def problem_locked(problem_id: str, user_id: Optional[str]) -> Optional[str]:

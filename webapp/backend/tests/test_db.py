@@ -5,7 +5,18 @@ from __future__ import annotations
 import sqlite3
 import threading
 
+import os
+
 import pytest
+
+#: Some behaviour is engine-specific and should be asserted on that engine only
+#: -- but skipping must be visible, so it states which engine it needs.
+sqlite_only = pytest.mark.skipif(
+    bool(os.environ.get("FORGE_TEST_DATABASE_URL")),
+    reason="asserts SQLite internals; the suite is running on Postgres")
+postgres_only = pytest.mark.skipif(
+    not os.environ.get("FORGE_TEST_DATABASE_URL"),
+    reason="needs FORGE_TEST_DATABASE_URL")
 
 
 def test_migrations_run_to_head_and_are_idempotent(database):
@@ -14,12 +25,20 @@ def test_migrations_run_to_head_and_are_idempotent(database):
     assert database.migrate() == []
 
 
+def test_the_schema_version_is_recorded(database):
+    """Portable: however each engine stores it, the runner agrees with it."""
+    assert database.current_version() == database.SCHEMA_VERSION
+    assert database.healthy() == (True, "ok")
+
+
+@sqlite_only
 def test_migration_is_recorded_in_the_file_not_a_table(database):
     """user_version lives in the header, so it cannot drift from the schema."""
     version = database.connect().execute("PRAGMA user_version").fetchone()[0]
     assert version == database.SCHEMA_VERSION
 
 
+@sqlite_only
 def test_pragmas_are_actually_set(database):
     conn = database.connect()
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -42,9 +61,15 @@ def test_foreign_keys_cascade(database):
 
 
 def test_orphan_rows_cannot_be_inserted(database):
-    """Without ON DELETE CASCADE being enforced, this would silently succeed."""
+    """
+    Without the foreign key being enforced, this would silently succeed.
+
+    `db.IntegrityError` is the portable name: sqlite3 and psycopg raise
+    different classes, and pinning the test to one of them would have made it a
+    SQLite test wearing a portable coat.
+    """
     from app import store
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(database.IntegrityError):
         store.record_submission("ghost", "01-01", "python", "src",
                                 {"verdict": "accepted", "passed": 1,
                                  "total": 1}, 1.0)
@@ -99,6 +124,7 @@ def test_concurrent_writers_all_succeed(database):
     assert len(store.submissions("u1", limit=500)) == 40
 
 
+@sqlite_only
 def test_backup_produces_a_readable_copy(database, tmp_path):
     from app import store
     store.create_user("u1", "a@b.co", "A", "hash")
@@ -117,8 +143,28 @@ def test_backup_produces_a_readable_copy(database, tmp_path):
 
 
 def test_health_reports_a_schema_mismatch(database):
+    """
+    A half-finished rollout must fail its health check, not serve errors.
+
+    Written through the backend so it holds on both engines -- one stores the
+    version in the file header, the other in a table.
+    """
     ok, _ = database.healthy()
     assert ok
-    database.connect().execute("PRAGMA user_version = 999")
+
+    with database.transaction() as conn:
+        database.backend.write_version(conn._conn, 999)
     ok, detail = database.healthy()
     assert not ok and "999" in detail
+
+
+@postgres_only
+def test_backup_points_at_pg_dump_instead_of_writing_a_bad_one(database, tmp_path):
+    """
+    Refusing beats reimplementing pg_dump badly.
+
+    A half-correct dump that restores into a subtly different database is worse
+    than an error telling you which tool to use.
+    """
+    with pytest.raises(RuntimeError, match="pg_dump"):
+        database.backup(tmp_path / "copy.dump")

@@ -59,6 +59,7 @@ cd frontend && npm install
 | **Courses: 258 lessons of theory, read in the app** | ✅ |
 | **Worked examples runnable in the sandbox** | ✅ |
 | **Per-lesson progress, alongside solved problems** | ✅ |
+| **Progressive unlocking, with an escape hatch** | ✅ enforced server-side |
 | `stdout` capture and a Console tab | ✅ |
 | Drafts autosaved per problem, survive refresh | ✅ (localStorage) |
 | Resizable panels, `⌘↵` submit, `⌘'` run | ✅ |
@@ -71,7 +72,8 @@ cd frontend && npm install
 | **Env-driven configuration, with a prod safety gate** | ✅ |
 | **Structured logs, request ids, error boundary, security headers** | ✅ |
 | **Ops CLI: migrate / backup / vacuum / users / reset-password** | ✅ |
-| **Test suite (167 tests)** | ✅ |
+| **Test suite, on SQLite and Postgres** | ✅ 182 / 180 |
+| **Postgres backend** | ✅ same code, one env var |
 | **Confetti on an accepted submission** | ✅ lazy-loaded, respects reduced-motion |
 
 ## Honest limitations
@@ -172,12 +174,13 @@ Stub detection is AST-based (`empty_bodies` in `child_runner.py`) because
 webapp/
 ├── backend/app/
 │   ├── settings.py      every knob, from FORGE_* env vars, validated at import
-│   ├── db.py            connections, pragmas, retries, migrations, backup
+│   ├── db.py            SQLite + Postgres behind one surface; migrations
 │   ├── store.py         queries only — no driver details, no pragmas
 │   ├── auth.py          scrypt, sessions, rate limiting, the CSRF guard
 │   ├── observability.py logging, request ids, error boundary, headers
 │   ├── cli.py           operational commands
 │   ├── content.py       courses, modules, lessons from the filesystem
+│   ├── progression.py   which modules are unlocked, and why
 │   ├── courses_api.py   the learning routes
 │   ├── languages.py     the language table: one row per language
 │   ├── codegen.py       renders starter code from a neutral signature
@@ -396,7 +399,7 @@ rollout fails its health check instead of serving errors.
 ## Tests
 
 ```bash
-cd backend && python3 -m pytest tests -q        # 167 tests, ~40s
+cd backend && python3 -m pytest tests -q        # 182 tests, ~46s
 ```
 
 Each test gets its own database file and its own reloaded configuration, so they
@@ -454,6 +457,46 @@ Worked examples go through the *same* isolated runner as a submission, so there 
 no second execution path to secure, and a demo that hangs is contained by the same
 limits. Output is capped at `FORGE_EXEC_MAX_STDOUT_BYTES` (64 KB) and truncation
 says so — at the old 8 KB cap, topic 22's examples were silently cut in half.
+
+## Progressive unlocking
+
+The curriculum was always ordered — backtracking assumes recursion, segment trees
+assume trees — but nothing enforced it, so module 20 could be the first thing you
+opened. Now a module opens when the previous one's **lessons are all read and 40%
+of its problems are solved**.
+
+**It is deliberately not strict, and that is the design.** Gating each module
+behind 100% of the previous one's problems would put 315 problems in front of
+module 22 — a cage, not a curriculum. Three things keep it humane:
+
+* **Reading is the cheap gate; solving is the honest one.** 40% of a
+  twelve-problem module is five, not twelve.
+* **"Unlock anyway" always works** and is recorded. Someone who already knows
+  arrays should not have to prove it, and one Hard problem must never wall a
+  learner out of the remaining nineteen modules.
+* **Existing work is grandfathered.** Turning this on cannot take away a module
+  you have already read or solved in — there is a test for exactly that, because
+  shipping it otherwise would have locked people out of their own history.
+
+Tune it in the course manifest, since strictness is a property of a course:
+
+```json
+"progression": { "enabled": true, "requireLessons": 1.0, "requireProblems": 0.4 }
+```
+
+`FORGE_PROGRESSION=0` turns it off everywhere; every module, lesson and problem
+then reads as open.
+
+**The lock is enforced on the server, not hidden in the UI.** A locked lesson,
+`examples` run, mark-as-read or graded submission returns **423 Locked** with the
+requirement in the message. Hiding a row in the client is not a lock — anyone can
+POST. `mode="run"` stays open, because it records nothing and helps you look
+around.
+
+A locked module withholds its lesson list and problems: a gate should show what it
+costs to open, not what is behind it. And the messages point at work you can
+actually do — an earlier version told you to finish module 04 while module 04 was
+itself locked behind 03.
 
 ## Preferences
 
@@ -517,26 +560,81 @@ The type maps are data for exactly this reason — nothing in `codegen.py` branc
 on which language it is rendering, and there is a test that fails if a row cannot
 render every neutral type.
 
-## If you outgrow SQLite
+## Choosing an engine
 
-The move to Postgres is contained on purpose. Everything SQLite-specific lives in
-`app/db.py`: `connect()`, the pragmas, the retry predicate, and the migration
-runner's use of `user_version`. `store.py` above it only issues SQL and never
-touches a driver detail or a pragma.
+Both are supported by the same code. Leave `FORGE_DATABASE_URL` unset for SQLite;
+set it and everything runs on Postgres:
 
-What the swap involves:
+```bash
+pip install -r requirements-postgres.txt
+export FORGE_DATABASE_URL=postgresql://forge:secret@localhost:5432/forge
+python3 -m app.cli migrate      # same migrations, Postgres dialect
+python3 -m app.cli check        # prints "database: postgres"
+```
 
-1. `db.py` — replace the connection helpers with a pool (`psycopg_pool`), keep the
-   same `transaction()` / `reading()` / `query_all()` surface, and move the schema
-   version into a table since `user_version` is SQLite's.
-2. `store.py` — `?` placeholders become `%s`; `INSERT OR REPLACE` becomes
-   `INSERT ... ON CONFLICT DO UPDATE` (the notes upsert already uses that form);
-   `AUTOINCREMENT` becomes `GENERATED BY DEFAULT AS IDENTITY`.
-3. Nothing else. `auth.py`, the routes, the executors and the whole frontend are
-   untouched, because none of them know where the data lives.
+**Which to pick.** Measured on this machine, eight threads writing twenty-five
+submissions each, all released at once:
 
-The signal that it is time: sustained write contention, or wanting more than one
-machine. Read volume alone will not do it.
+| | rows | wall clock | p50 | p99 | writes/s |
+|---|---|---|---|---|---|
+| SQLite | 200/200 | 108 ms | **0.1 ms** | 97 ms | 1,855 |
+| Postgres | 200/200 | 29 ms | 1.0 ms | **2.7 ms** | 6,907 |
+
+SQLite is *faster* per write when uncontended — there is no socket in the path —
+but it allows one writer at a time, so under load the writers queue and the tail
+stretches to 97 ms. Postgres is slower at the median and 36× better at p99.
+
+So: **SQLite until concurrent writes hurt, or until you want more than one
+machine.** Neither loses data; the difference is contention, not durability. Read
+volume alone will never be the reason to switch.
+
+### What the port actually involved
+
+Everything engine-specific lives in `app/db.py`, behind two small classes with
+the same surface. `store.py` above it writes one dialect of SQL and never touches
+a driver detail. Four things genuinely differed and are worth knowing about if you
+add another engine:
+
+* **`REAL` is not portable.** Every timestamp here is epoch seconds, needing ten
+  significant digits; Postgres `REAL` is a 4-byte float with about seven, which
+  would round `created_at` to the nearest ~30 seconds. The Postgres migrations use
+  `double precision`. This would have been a silent data bug, not an error.
+* **`cursor.lastrowid` is SQLite-only.** `INSERT ... RETURNING id` works in both
+  (SQLite since 3.35).
+* **`MAX(verdict = 'accepted')` is a SQLite-ism** — Postgres has no `MAX()` over
+  booleans. A `CASE` expression is portable.
+* **Schema version.** SQLite keeps it in `PRAGMA user_version`, in the file header
+  where it cannot drift from the schema; Postgres has no equivalent, so it gets a
+  `schema_version` table. Same version numbers, same migration list.
+
+Migrations carry a per-dialect script only where the engines must differ.
+Migration 2 rebuilds three tables on SQLite (which cannot `ALTER` a table to add
+a foreign key) and is a no-op on Postgres, which declared the constraints in
+migration 1.
+
+### Running the suite against both
+
+```bash
+python3 -m pytest tests -q                                  # SQLite
+FORGE_TEST_DATABASE_URL=postgresql://forge@localhost:5432/forge_test \
+  python3 -m pytest tests -q                                # Postgres
+```
+
+Each Postgres test drops and recreates `public`, so it starts from nothing and
+re-runs the migrations — truncating instead would leave whichever schema the first
+test happened to create, and would never exercise the migration path. Tests that
+assert engine internals are marked `@sqlite_only` / `@postgres_only` and **state
+the reason when they skip**, so a green run cannot hide an unexercised backend.
+
+Current status: **182 passed, 1 skipped** on SQLite; **180 passed, 3 skipped** on
+Postgres.
+
+### Backups
+
+SQLite uses its online backup API (`app.cli backup`) rather than a file copy,
+because `cp` on a WAL database can capture a torn state. On Postgres that command
+refuses and tells you to use `pg_dump` — a half-correct dump that restores into a
+subtly different database is worse than an error naming the right tool.
 
 ## Resetting your data
 
