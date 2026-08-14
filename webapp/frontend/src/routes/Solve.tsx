@@ -20,7 +20,7 @@ type LeftTab = "description" | "submissions" | "notes";
 export default function Solve() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { meta, patch, byId } = useAppData();
+  const { meta, patch, byId, refresh } = useAppData();
   const { user, requireAuth, preferences, setPreference } = useAuth();
   const owner = draftOwner(user);
 
@@ -37,6 +37,8 @@ export default function Solve() {
   const [historyKey, setHistoryKey] = useState(0);
   /** Bumped on every accepted submission, so re-solving fires it again. */
   const [celebrate, setCelebrate] = useState(0);
+  /** Where the chain goes next, fetched after a solve. */
+  const [nextUp, setNextUp] = useState<{ id: string; title: string } | null>(null);
 
   const language: Language | undefined = useMemo(
     () => meta?.languages.find((l) => l.id === langId), [meta, langId],
@@ -67,6 +69,7 @@ export default function Solve() {
     setLoadError(null);
     setLeftTab("description");
     setCelebrate(0);
+    setNextUp(null);
     void (async () => {
       try {
         const detail = await api.problem(id);
@@ -143,7 +146,15 @@ export default function Solve() {
         // answer must not un-solve a problem -- the server would still report
         // it solved, so downgrading here would just disagree with the API.
         const accepted = result.summary.verdict === "accepted";
-        if (accepted) setCelebrate((n) => n + 1);
+        if (accepted) {
+          setCelebrate((n) => n + 1);
+          // Solving one problem unlocks the next, and lock state lives on the
+          // server -- so the list has to be re-pulled rather than patched.
+          void refresh();
+          // The course is a single ordered run, so "what now" has exactly one
+          // answer; showing it beats making them go back to the list to find it.
+          void api.chain().then((c) => setNextUp(c.next)).catch(() => {});
+        }
         patch(problem.id, {
           attempts: (summary?.attempts ?? 0) + 1,
           status: accepted ? "solved"
@@ -244,6 +255,7 @@ export default function Solve() {
             reason={problem.lockedReason}
             courseId="dsa"
             moduleId={problem.id.split("-")[0]}
+            problemId={problem.id}
             onUnlocked={() => window.location.reload()}
           />
         </div>
@@ -435,6 +447,16 @@ export default function Solve() {
                       <span className="ml-auto font-mono text-[11px] text-mist-400">
                         {report.summary.passed}/{report.summary.total}
                       </span>
+                    )}
+                    {nextUp && nextUp.id !== problem.id && (
+                      <Link
+                        to={`/problems/${nextUp.id}`}
+                        className="btn-primary !py-1 !px-2.5 !text-[11.5px]"
+                        title={nextUp.title}
+                      >
+                        Next: {nextUp.id}
+                        <Icon name="arrowRight" className="h-3.5 w-3.5" />
+                      </Link>
                     )}
                   </div>
                   <div className="min-h-0 flex-1">

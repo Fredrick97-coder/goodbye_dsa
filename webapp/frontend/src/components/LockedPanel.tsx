@@ -12,12 +12,14 @@ import { Icon, Spinner } from "./ui";
  * recorded, so the choice belongs to the learner rather than being a loophole.
  */
 export function LockedPanel({
-  title, reason, courseId, moduleId, onUnlocked, compact = false,
+  title, reason, courseId, moduleId, problemId, onUnlocked, compact = false,
 }: {
   title: string;
   reason: string | null;
   courseId: string;
   moduleId: string;
+  /** When set, skipping unlocks this one problem rather than a whole module. */
+  problemId?: string;
   onUnlocked: () => void;
   compact?: boolean;
 }) {
@@ -31,7 +33,8 @@ export function LockedPanel({
     setBusy(true);
     setError(null);
     try {
-      await api.unlockModule(courseId, moduleId);
+      if (problemId) await api.unlockProblem(problemId);
+      else await api.unlockModule(courseId, moduleId);
       onUnlocked();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
@@ -59,9 +62,15 @@ export function LockedPanel({
       )}
 
       <div className="mt-5 flex flex-wrap justify-center gap-2">
-        <Link to={`/learn/${courseId}`} className="btn-primary">
-          <Icon name="book" className="h-4 w-4" /> Back to the course
-        </Link>
+        {problemId ? (
+          <Link to="/problems" className="btn-primary">
+            <Icon name="grid" className="h-4 w-4" /> Back to the problems
+          </Link>
+        ) : (
+          <Link to={`/learn/${courseId}`} className="btn-primary">
+            <Icon name="book" className="h-4 w-4" /> Back to the course
+          </Link>
+        )}
         {user ? (
           <button onClick={skip} disabled={busy} className="btn-outline">
             {busy ? <Spinner /> : <Icon name="arrowRight" className="h-3.5 w-3.5" />}
@@ -74,7 +83,9 @@ export function LockedPanel({
 
       {user && (
         <p className="mt-3 text-[10.5px] leading-relaxed text-mist-400">
-          Already know this material? Skipping is fine and is remembered.
+          {problemId
+            ? "Stuck? Skipping this one moves you to the next and is remembered."
+            : "Already know this material? Skipping is fine and is remembered."}
         </p>
       )}
     </div>

@@ -41,7 +41,7 @@ def decorate(items: List[Dict[str, Any]],
             item["attempts"] = 0
             item["bookmarked"] = False
             item["hasNote"] = False
-            item["lockedReason"] = locks.get(item["id"].split("-")[0])
+            item["lockedReason"] = locks.get(item["id"])
             item["locked"] = item["lockedReason"] is not None
         return items
 
@@ -55,29 +55,39 @@ def decorate(items: List[Dict[str, Any]],
         item["attempts"] = attempts.get(pid, 0)
         item["bookmarked"] = pid in marked
         item["hasNote"] = pid in noted
-        item["lockedReason"] = locks.get(pid.split("-")[0])
+        item["lockedReason"] = locks.get(pid)
         item["locked"] = item["lockedReason"] is not None
     return items
 
 
 def _lock_index(user_id: Optional[str]) -> Dict[str, Optional[str]]:
     """
-    module id -> why it is locked, computed once for the whole list.
+    problem id -> why it is locked, computed once for the whole list.
 
-    Asking per problem would recompute the whole course's lock state 342 times
-    for one render of the problem set.
+    Built from the chain in a single pass. Asking `problem_locked` per problem
+    would rebuild the whole 342-problem chain 342 times to render one page.
     """
     if not settings.progression:
         return {}
+
+    chain = progression.problem_chain(user_id)
+    if chain.frontier is None:
+        return {}
+
+    order = {pid: i for i, pid in enumerate(chain.unlocked)}
+    frontier_at = order.get(chain.frontier, 0)
     out: Dict[str, Optional[str]] = {}
-    for course in content.all_courses():
-        if course.language != "python":
+    for pid, is_open in chain.unlocked.items():
+        if is_open:
             continue
-        states = progression.compute(course, user_id)
-        for module_id, state in states.items():
-            if not state.unlocked:
-                out[module_id] = progression.locked_reason(
-                    course, module_id, user_id)
+        if user_id is None:
+            out[pid] = ("sign in to track your progress — problems unlock one "
+                        "at a time as you solve them")
+            continue
+        ahead = order.get(pid, 0) - frontier_at
+        out[pid] = (f"solve {chain.frontier} to unlock this one" if ahead <= 1
+                    else f"solve {chain.frontier} next — {ahead} problems "
+                         f"stand between it and this one")
     return out
 
 

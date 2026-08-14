@@ -742,6 +742,30 @@ MIGRATIONS: List[Tuple[int, str, Any]] = [
         );
     """,
     }),
+
+    (7, "per-problem unlocks, for the sequential problem chain", {
+        "sqlite": """
+        -- The chain is strictly linear, so being stuck on one problem blocks
+        -- every problem after it. This is the per-problem escape hatch; without
+        -- it, one Hard problem walls off the rest of the course.
+        CREATE TABLE IF NOT EXISTS problem_unlocks (
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            problem_id  TEXT NOT NULL,
+            unlocked_at REAL NOT NULL,
+            reason      TEXT NOT NULL DEFAULT 'skipped',
+            PRIMARY KEY (user_id, problem_id)
+        );
+    """,
+        "postgres": """
+        CREATE TABLE IF NOT EXISTS problem_unlocks (
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            problem_id  TEXT NOT NULL,
+            unlocked_at DOUBLE PRECISION NOT NULL,
+            reason      TEXT NOT NULL DEFAULT 'skipped',
+            PRIMARY KEY (user_id, problem_id)
+        );
+    """,
+    }),
 ]
 
 SCHEMA_VERSION = max(version for version, _, _ in MIGRATIONS)

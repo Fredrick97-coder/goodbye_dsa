@@ -398,6 +398,43 @@ def problems(topic: Optional[int] = None,
     return items
 
 
+@app.post("/api/problems/{problem_id}/unlock")
+def unlock_problem(problem_id: str, request: Request,
+                   user: Dict[str, Any] = Depends(auth.current_user),
+                   ) -> Dict[str, Any]:
+    """
+    Skip one problem and move the chain on.
+
+    The chain is strictly linear, so without this being stuck on a single
+    problem would wall off every problem after it. Recorded, and never refused.
+    """
+    auth.check_origin(request)
+    if repo.find_problem(problem_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            f"no problem {problem_id}")
+    store.grant_problem(user["id"], problem_id, reason="skipped")
+    chain = progression.problem_chain(user["id"])
+    return {"unlocked": True, "problemId": problem_id,
+            "next": chain.frontier, "solved": chain.position,
+            "total": chain.total}
+
+
+@app.get("/api/problems/chain")
+def problem_chain(user: Optional[Dict[str, Any]] = Depends(auth.current_user_optional),
+                  ) -> Dict[str, Any]:
+    """Where the learner is in the run: what is next, and how far along."""
+    chain = progression.problem_chain(user["id"] if user else None)
+    nxt = repo.problem_detail(chain.frontier) if chain.frontier else None
+    return {
+        "next": ({"id": chain.frontier, "title": nxt["title"],
+                  "difficulty": nxt["difficulty"], "topicName": nxt["topicName"]}
+                 if nxt else None),
+        "solved": chain.position,
+        "total": chain.total,
+        "enabled": bool(settings.progression),
+    }
+
+
 @app.get("/api/problems/random")
 def random_problem(difficulty: Optional[str] = None,
                    unsolved: bool = True,

@@ -157,6 +157,20 @@ def revoke_module(user: str, course_id: str, module_id: str) -> None:
                "AND module_id = ?", (user, course_id, module_id))
 
 
+def granted_problems(user: str) -> set:
+    """Problems this user explicitly skipped past."""
+    rows = db.query_all(
+        "SELECT problem_id FROM problem_unlocks WHERE user_id = ?", (user,))
+    return {r["problem_id"] for r in rows}
+
+
+def grant_problem(user: str, problem_id: str, reason: str = "skipped") -> None:
+    db.execute(
+        "INSERT INTO problem_unlocks (user_id, problem_id, unlocked_at, reason) "
+        "VALUES (?,?,?,?) ON CONFLICT(user_id, problem_id) DO NOTHING",
+        (user, problem_id, time.time(), reason))
+
+
 # ------------------------------------------------------------- preferences
 
 #: What a client is allowed to set, and how each value is checked. A preference

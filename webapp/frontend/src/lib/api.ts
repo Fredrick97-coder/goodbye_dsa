@@ -179,6 +179,17 @@ export const api = {
       `/courses/${courseId}/modules/${moduleId}/lessons/${slug}/done`,
       json({ done })),
 
+  unlockProblem: (problemId: string) =>
+    req<{ unlocked: boolean; problemId: string; next: string | null;
+          solved: number; total: number }>(
+      `/problems/${problemId}/unlock`, { method: "POST" }),
+
+  chain: () => req<{
+    next: { id: string; title: string; difficulty: string;
+            topicName: string } | null;
+    solved: number; total: number; enabled: boolean;
+  }>("/problems/chain"),
+
   unlockModule: (courseId: string, moduleId: string) =>
     req<{ unlocked: boolean; moduleId: string }>(
       `/courses/${courseId}/modules/${moduleId}/unlock`, { method: "POST" }),

@@ -391,14 +391,85 @@ def test_resume_never_points_at_a_locked_lesson(account):
                     f"/lessons/{target['slug']}/done", json={"done": True})
 
 
-def test_problem_list_reports_lock_state(account):
+def test_only_the_first_problem_is_open_on_a_fresh_account(account):
+    """Problems are a single ordered run: exactly one is open at a time."""
     client, _, _ = account
     problems = client.get("/api/problems").json()
-    locked = [p for p in problems if p["locked"]]
-    assert locked, "with a fresh account most problems should be locked"
-    assert all(p["lockedReason"] for p in locked)
-    assert all(not p["locked"] for p in problems if p["topic"] == 1), \
-        "module 01 is always open"
+    open_ids = [p["id"] for p in problems if not p["locked"]]
+    assert open_ids == ["01-01"]
+    assert all(p["lockedReason"] for p in problems if p["locked"])
+
+
+def test_solving_one_problem_opens_exactly_the_next(account):
+    client, _, _ = account
+    assert client.get("/api/problems/chain").json()["next"]["id"] == "01-01"
+
+    res = client.post("/api/submit", json={
+        "problemId": "01-01", "language": "python",
+        "source": "def find_max(arr):\n    return max(arr)\n", "mode": "test"})
+    assert res.json()["summary"]["verdict"] == "accepted"
+
+    problems = client.get("/api/problems").json()
+    assert [p["id"] for p in problems if not p["locked"]] == ["01-01", "01-02"]
+    assert client.get("/api/problems/chain").json()["next"]["id"] == "01-02"
+
+
+def test_a_wrong_answer_does_not_advance_the_chain(account):
+    client, _, _ = account
+    client.post("/api/submit", json={
+        "problemId": "01-01", "language": "python",
+        "source": "def find_max(arr):\n    return 0\n", "mode": "test"})
+    assert client.get("/api/problems/chain").json()["next"]["id"] == "01-01"
+    problems = client.get("/api/problems").json()
+    assert [p["id"] for p in problems if not p["locked"]] == ["01-01"]
+
+
+def test_you_cannot_jump_ahead_in_the_chain(account):
+    client, _, _ = account
+    res = client.post("/api/submit", json={
+        "problemId": "01-02", "language": "python",
+        "source": "def count_occurrences(a, t):\n    return a.count(t)\n",
+        "mode": "test"})
+    assert res.status_code == 423
+    assert "solve 01-01" in res.json()["detail"]
+
+
+def test_skipping_a_problem_advances_the_chain(account):
+    """
+    The escape hatch. In a linear chain, one hard problem would otherwise wall
+    off every problem after it -- 341 of them, in the worst case.
+    """
+    client, _, _ = account
+    res = client.post("/api/problems/01-01/unlock").json()
+    assert res["unlocked"] is True and res["next"] == "01-02"
+    problems = client.get("/api/problems").json()
+    assert [p["id"] for p in problems if not p["locked"]] == ["01-01", "01-02"]
+
+
+def test_an_ungraded_problem_cannot_wall_the_chain(account):
+    """
+    01-10 has no reference tests, so it can never return `accepted`.
+
+    Under a strict chain that would be a permanent stop with 332 problems behind
+    it, so an ungraded problem clears itself once the chain reaches it.
+    """
+    from app import progression, store
+    client, email, _ = account
+    user_id = store.user_by_email(email)["id"]
+    for n in range(1, 10):
+        store.grant_problem(user_id, f"01-{n:02d}")
+
+    chain = progression.problem_chain(user_id)
+    assert chain.cleared["01-10"] is True, "ungraded problem must self-clear"
+    assert chain.unlocked["01-11"] is True, "and must not block what follows"
+    assert chain.frontier == "01-11"
+
+
+def test_signed_out_sees_only_the_first_problem(client):
+    problems = client.get("/api/problems").json()
+    assert [p["id"] for p in problems if not p["locked"]] == ["01-01"]
+    locked = next(p for p in problems if p["locked"])
+    assert "sign in" in locked["lockedReason"]
 
 
 def test_progression_can_be_switched_off(monkeypatch, account):

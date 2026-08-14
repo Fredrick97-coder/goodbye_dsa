@@ -144,6 +144,10 @@ export default function Problems() {
   }, [problems, f.q, f.difficulty, f.topic, f.status, f.tested, f.starred, f.open]);
 
   const lockedCount = problems.filter((p) => p.locked).length;
+  /** The single problem the chain says to do next. */
+  const nextUp = useMemo(
+    () => problems.find((p) => !p.locked && p.status !== "solved") ?? null,
+    [problems]);
 
   const solvedHere = filtered.filter((p) => p.status === "solved").length;
 
@@ -176,6 +180,12 @@ export default function Problems() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {user && nextUp && lockedCount > 0 && (
+              <Link to={`/problems/${nextUp.id}`} className="btn-primary !py-1.5 text-[12.5px]">
+                <Icon name="play" className="h-3.5 w-3.5" />
+                Next: {nextUp.id} {nextUp.title}
+              </Link>
+            )}
             {f.active > 0 && (
               <button onClick={f.clear} className="btn-ghost !py-1.5 text-[12px]">
                 <Icon name="x" className="h-3.5 w-3.5" /> Clear filters

@@ -59,7 +59,7 @@ cd frontend && npm install
 | **Courses: 258 lessons of theory, read in the app** | ✅ |
 | **Worked examples runnable in the sandbox** | ✅ |
 | **Per-lesson progress, alongside solved problems** | ✅ |
-| **Progressive unlocking, with an escape hatch** | ✅ enforced server-side |
+| **Progressive unlocking: one problem at a time** | ✅ enforced server-side |
 | `stdout` capture and a Console tab | ✅ |
 | Drafts autosaved per problem, survive refresh | ✅ (localStorage) |
 | Resizable panels, `⌘↵` submit, `⌘'` run | ✅ |
@@ -72,7 +72,7 @@ cd frontend && npm install
 | **Env-driven configuration, with a prod safety gate** | ✅ |
 | **Structured logs, request ids, error boundary, security headers** | ✅ |
 | **Ops CLI: migrate / backup / vacuum / users / reset-password** | ✅ |
-| **Test suite, on SQLite and Postgres** | ✅ 182 / 180 |
+| **Test suite, on SQLite and Postgres** | ✅ 188 / 186 |
 | **Postgres backend** | ✅ same code, one env var |
 | **Confetti on an accepted submission** | ✅ lazy-loaded, respects reduced-motion |
 
@@ -399,7 +399,7 @@ rollout fails its health check instead of serving errors.
 ## Tests
 
 ```bash
-cd backend && python3 -m pytest tests -q        # 182 tests, ~46s
+cd backend && python3 -m pytest tests -q        # 188 tests, ~46s
 ```
 
 Each test gets its own database file and its own reloaded configuration, so they
@@ -460,43 +460,55 @@ says so — at the old 8 KB cap, topic 22's examples were silently cut in half.
 
 ## Progressive unlocking
 
-The curriculum was always ordered — backtracking assumes recursion, segment trees
-assume trees — but nothing enforced it, so module 20 could be the first thing you
-opened. Now a module opens when the previous one's **lessons are all read and 40%
-of its problems are solved**.
+Two gates, because reading and practising are different activities.
 
-**It is deliberately not strict, and that is the design.** Gating each module
-behind 100% of the previous one's problems would put 315 problems in front of
-module 22 — a cage, not a curriculum. Three things keep it humane:
+### Problems: one linear chain
 
-* **Reading is the cheap gate; solving is the honest one.** 40% of a
-  twelve-problem module is five, not twelve.
-* **"Unlock anyway" always works** and is recorded. Someone who already knows
-  arrays should not have to prove it, and one Hard problem must never wall a
-  learner out of the remaining nineteen modules.
-* **Existing work is grandfathered.** Turning this on cannot take away a module
-  you have already read or solved in — there is a test for exactly that, because
-  shipping it otherwise would have locked people out of their own history.
+Every problem in the course forms a single ordered run. **Only `01-01` is open on
+a new account**; solving it opens `01-02`, and so on. Exactly one problem is
+"next" at any moment, and both the problem set and the solve view say which.
 
-Tune it in the course manifest, since strictness is a property of a course:
+Three things stop that from being a trap:
+
+* **Skipping always works.** "Unlock anyway" opens the current problem and moves
+  the chain on. In a strictly linear run, one Hard problem would otherwise wall
+  off *every* problem after it — up to 341 of them.
+* **Ungraded problems clear themselves.** `01-10` and `09-09` have no reference
+  tests, so they can never return `accepted`. `01-10` sits tenth, so a naive
+  chain would make the remaining 332 problems permanently unreachable. When the
+  chain reaches one, it counts as cleared — there is nothing to solve, so there
+  is nothing to gate on.
+* **A wrong answer costs nothing.** Only `accepted` advances the chain; failing
+  or running is free.
+
+Solved problems stay open, so you can always go back and re-read your own work.
+
+### Modules and lessons: the previous module
+
+A module's lessons open when the previous module's **lessons are all read and 40%
+of its problems are solved** — deliberately not stricter. Gating each module
+behind 100% would put 315 problems in front of module 22. "Unlock anyway" works
+here too, and a module you have already read or solved in is grandfathered so
+enabling this could never take away work you had done.
+
+A module unlock lets you *attempt* its problems, but does not mark them cleared:
+unlocking module 05 to read its lessons should not silently jump the problem
+chain twelve places.
+
+### Configuration and enforcement
 
 ```json
 "progression": { "enabled": true, "requireLessons": 1.0, "requireProblems": 0.4 }
 ```
 
-`FORGE_PROGRESSION=0` turns it off everywhere; every module, lesson and problem
-then reads as open.
+in the course manifest, since strictness is a property of a course.
+`FORGE_PROGRESSION=0` turns everything off and every problem, lesson and module
+reads as open.
 
-**The lock is enforced on the server, not hidden in the UI.** A locked lesson,
-`examples` run, mark-as-read or graded submission returns **423 Locked** with the
-requirement in the message. Hiding a row in the client is not a lock — anyone can
-POST. `mode="run"` stays open, because it records nothing and helps you look
-around.
-
-A locked module withholds its lesson list and problems: a gate should show what it
-costs to open, not what is behind it. And the messages point at work you can
-actually do — an earlier version told you to finish module 04 while module 04 was
-itself locked behind 03.
+**The locks are enforced on the server.** A locked lesson, `examples` run,
+mark-as-read or graded submission returns **423 Locked** with the requirement in
+the message — hiding a row in the client is not a lock, since anyone can POST.
+`mode="run"` stays open: it records nothing and helps you look around.
 
 ## Preferences
 
@@ -626,7 +638,7 @@ test happened to create, and would never exercise the migration path. Tests that
 assert engine internals are marked `@sqlite_only` / `@postgres_only` and **state
 the reason when they skip**, so a green run cannot hide an unexercised backend.
 
-Current status: **182 passed, 1 skipped** on SQLite; **180 passed, 3 skipped** on
+Current status: **188 passed, 1 skipped** on SQLite; **186 passed, 3 skipped** on
 Postgres.
 
 ### Backups

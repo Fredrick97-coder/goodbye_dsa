@@ -228,27 +228,134 @@ def locked_reason(course: content.Course, module_id: str,
             f"keep going to reach module {module_id}")
 
 
+def _ungraded() -> set:
+    """
+    Problems with no reference tests, cached.
+
+    These can never return `accepted`, so in a strict chain they would be a
+    permanent wall -- 01-10 sits tenth and would make the remaining 332 problems
+    unreachable forever. They count as cleared on arrival: there is nothing to
+    solve, so there is nothing to gate on.
+    """
+    global _UNGRADED_CACHE
+    if _UNGRADED_CACHE is None:
+        from . import repo
+        out = set()
+        for problem in repo.all_problems():
+            if not repo.specs_for(problem.topic, problem.num):
+                out.add(f"{problem.topic:02d}-{problem.num:02d}")
+        _UNGRADED_CACHE = out
+    return _UNGRADED_CACHE
+
+
+_UNGRADED_CACHE: Optional[set] = None
+
+
+@dataclass
+class ChainState:
+    """Where a learner stands in the single ordered run of problems."""
+    unlocked: Dict[str, bool]
+    cleared: Dict[str, bool]
+    #: The one problem to work on next: the first that is not cleared.
+    frontier: Optional[str]
+    position: int
+    total: int
+
+
+def problem_chain(user_id: Optional[str]) -> ChainState:
+    """
+    One linear run through every problem, in curriculum order.
+
+    A problem is open only when everything before it is cleared, so exactly one
+    new problem appears at a time. Solving it advances the frontier by one.
+
+    "Cleared" is solved, ungraded (nothing to solve), or explicitly skipped. A
+    *module* grant deliberately does NOT clear its problems: unlocking module 05
+    to read its lessons should not silently mark twelve problems done and jump
+    the chain past them -- it opens them to be attempted, nothing more.
+    """
+    from . import repo
+
+    order = repo.problem_ids()
+    if not settings.progression:
+        every = {pid: True for pid in order}
+        return ChainState(every, dict(every), None, len(order), len(order))
+
+    statuses = store.statuses(user_id) if user_id else {}
+    granted = store.granted_problems(user_id) if user_id else set()
+    module_granted = (store.granted_modules(user_id, "dsa")
+                      if user_id else set())
+    ungraded = _ungraded()
+
+    unlocked: Dict[str, bool] = {}
+    cleared: Dict[str, bool] = {}
+    frontier: Optional[str] = None
+    open_ahead = True
+    position = 0
+
+    for index, pid in enumerate(order):
+        module = pid.split("-")[0]
+        is_cleared = (statuses.get(pid) == "solved"
+                      or pid in ungraded
+                      or pid in granted)
+        cleared[pid] = is_cleared
+        # Visibility is NOT the same as cleared. An ungraded problem clears the
+        # chain when the frontier reaches it, but must not be visible before its
+        # turn -- otherwise 09-09, which has no tests, would sit unlocked on a
+        # brand new account while everything around it was still shut.
+        unlocked[pid] = (open_ahead
+                         or statuses.get(pid) == "solved"
+                         or pid in granted
+                         or module in module_granted)
+        if not is_cleared and open_ahead:
+            frontier = pid
+            open_ahead = False
+            # How far along the run they are: everything before the frontier.
+            position = index
+
+    if frontier is None:
+        position = len(order)
+
+    return ChainState(unlocked, cleared, frontier, position, len(order))
+
+
 def problem_locked(problem_id: str, user_id: Optional[str]) -> Optional[str]:
     """
     Why this problem is locked, or None.
 
-    Problems inherit their module's state. Returning the reason rather than a
-    bool means the API can explain the wall instead of just refusing.
+    Phrased as the single next action, because with a linear chain there only
+    ever is one.
     """
     if not settings.progression:
         return None
-    try:
-        module_id = str(problem_id).split("-")[0]
-    except (AttributeError, IndexError):
+    chain = problem_chain(user_id)
+    if chain.unlocked.get(problem_id, True):
         return None
 
-    for course in content.all_courses():
-        if course.language != "python":
-            continue
-        if module_id not in {m.id for m in course.modules}:
-            continue
-        return locked_reason(course, module_id, user_id)
-    return None
+    if user_id is None:
+        return ("sign in to track your progress — problems unlock one at a "
+                "time as you solve them")
+
+    if chain.frontier is None:
+        return "finish the earlier problems first"
+
+    order = _order_index()
+    ahead = order.get(problem_id, 0) - order.get(chain.frontier, 0)
+    if ahead <= 1:
+        return f"solve {chain.frontier} to unlock this one"
+    return (f"solve {chain.frontier} next — {ahead} problems stand between it "
+            f"and this one")
+
+
+def _order_index() -> Dict[str, int]:
+    global _ORDER_CACHE
+    if _ORDER_CACHE is None:
+        from . import repo
+        _ORDER_CACHE = {pid: i for i, pid in enumerate(repo.problem_ids())}
+    return _ORDER_CACHE
+
+
+_ORDER_CACHE: Optional[Dict[str, int]] = None
 
 
 def summary(course: content.Course, user_id: Optional[str]) -> Dict[str, Any]:
