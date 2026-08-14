@@ -1,0 +1,14 @@
+# Byte-compiled files. `webapp/.gitignore` already covered the app tree; the
+# course content at python/ and rosetta/ sat outside it, so 61 .pyc files were
+# tracked and showed up as modifications after every test run.
+__pycache__/
+*.pyc
+*.pyo
+
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# macOS
+.DS_Store

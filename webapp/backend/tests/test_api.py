@@ -394,3 +394,31 @@ def test_deleting_an_account_removes_its_preferences(account):
     db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     rows = db.query_all("SELECT * FROM preferences WHERE user_id = ?", (user_id,))
     assert rows == []
+
+
+def test_large_responses_are_compressed_and_small_ones_are_not(client):
+    """
+    gzip must actually apply, and `minimum_size` must actually be honoured.
+
+    Both halves matter. Registered outside the `BaseHTTPMiddleware` stack, gzip
+    only ever sees a streaming response with no body length, so `minimum_size`
+    does nothing and every 53-byte 404 gets compressed. This test fails if the
+    middleware order is changed back.
+    """
+    big = client.get("/api/problems", headers={"Accept-Encoding": "gzip"})
+    assert big.status_code == 200
+    assert big.headers.get("content-encoding") == "gzip"
+    assert len(big.json()) > 300
+
+    missing = client.get("/api/problems/99-99", headers={"Accept-Encoding": "gzip"})
+    assert missing.status_code == 404
+    assert "content-encoding" not in missing.headers, \
+        "a tiny 404 should not be compressed"
+
+
+def test_a_client_that_cannot_decompress_still_gets_the_same_data(client):
+    """Compression is an encoding, not a different API."""
+    plain = client.get("/api/problems", headers={"Accept-Encoding": "identity"})
+    assert plain.status_code == 200
+    assert "content-encoding" not in plain.headers
+    assert plain.json() == client.get("/api/problems").json()

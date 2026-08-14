@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import (Depends, FastAPI, HTTPException, Request, Response,
                      status)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
 from . import (auth, content, courses_api, db, executors, languages,
@@ -94,6 +95,22 @@ install_exception_handlers(app)
 # Order matters: middleware added last runs first, so the request id is assigned
 # before anything else can log, and the body limit is enforced before a handler
 # reads the body.
+# The problem list is 171 KB of highly repetitive JSON and the frontend fetches
+# all of it on boot; gzip takes it to 16 KB.
+#
+# **Added first, so it runs innermost -- next to the handlers.** The three
+# middlewares below are `BaseHTTPMiddleware` subclasses, which turn every
+# response into a streaming one; from outside them gzip only ever sees
+# `more_body=True` and compresses regardless of size, so `minimum_size` silently
+# did nothing. Innermost it sees the real body and leaves small responses alone.
+#
+# Compression plus secrets plus attacker-controlled input is the BREACH recipe,
+# so it is worth saying why that does not apply: the session token lives in an
+# HttpOnly cookie and never appears in a response body, and CSRF is handled by
+# checking the Origin header rather than by a token embedded in a page. Nothing
+# secret is in the bytes being compressed.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(RequestContextMiddleware)

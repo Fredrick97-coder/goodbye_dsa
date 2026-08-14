@@ -232,10 +232,18 @@ Four deliberate choices:
 - **Vite proxies `/api` to the backend**, so the browser sees one origin. No CORS
   in dev, no hardcoded `localhost:8000` in the frontend.
 
-The whole problem list (362 rows, 171 KB, served uncompressed — gzip would
-make it 16 KB) is fetched once into `app-data.tsx` and
-filtered in memory, so filters and search are instant and page transitions never
-spin.
+The whole problem list (362 rows, 171 KB of JSON — **16 KB on the wire**, gzipped)
+is fetched once into `app-data.tsx` and filtered in memory, so filters and search
+are instant and page transitions never spin.
+
+`GZipMiddleware` is registered **first**, which makes it run *innermost*, next to
+the handlers. That ordering is not cosmetic: the three middlewares around it are
+`BaseHTTPMiddleware` subclasses, and those turn every response into a streaming
+one. From outside them gzip only ever sees `more_body=True`, never a body length,
+so `minimum_size` silently does nothing and a 53-byte 404 gets compressed too.
+Innermost, it sees the real body and leaves small responses alone — measured:
+`/api/courses` (884 B) goes out untouched, `/api/health` (1051 B) compresses to
+554 B.
 
 ## API
 
@@ -713,7 +721,7 @@ test happened to create, and would never exercise the migration path. Tests that
 assert engine internals are marked `@sqlite_only` / `@postgres_only` and **state
 the reason when they skip**, so a green run cannot hide an unexercised backend.
 
-Current status: **195 passed, 1 skipped** on SQLite; **193 passed, 3 skipped** on
+Current status: **197 passed, 1 skipped** on SQLite; **195 passed, 3 skipped** on
 Postgres (17.10). The skips are the three `@sqlite_only` tests — `user_version`,
 the pragmas, and the file-copy backup — plus the one `@postgres_only` test in the
 other direction.
